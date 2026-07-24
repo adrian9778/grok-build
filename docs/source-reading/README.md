@@ -15,7 +15,7 @@
 | 07 | [文件编辑链路](07-文件编辑链路.md) | apply_patch、edit、write、workspace FS | 已完成第一轮精读 |
 | 08 | [会话状态与持久化](08-会话状态与持久化.md) | chat state、session storage、compaction | 已完成第一轮精读 |
 | 09 | [TUI事件与渲染](09-TUI事件与渲染.md) | pager、pager-render、markdown | 已完成第一轮精读 |
-| 10 | 权限与沙箱 | workspace permission、grok-sandbox | 待阅读 |
+| 10 | [权限与沙箱](10-权限与沙箱.md) | workspace permission、grok-sandbox | 已完成第一轮精读 |
 
 ## 推荐阅读路线
 
