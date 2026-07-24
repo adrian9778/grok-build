@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 01 | [程序入口与启动分发](01-程序入口与启动分发.md) | `xai-grok-pager-bin/src/main.rs`、该 crate 的 `Cargo.toml` | 已完成第一轮精读 |
 | 02 | [CLI 参数模型与 Clap](02-CLI参数模型与Clap.md) | `xai-grok-pager/src/app/cli.rs`、`PagerArgs`、`Command` | 已完成第一轮精读 |
-| 03 | TUI 应用启动 | `xai-grok-pager::app::run` | 待阅读 |
+| 03 | [TUI 应用启动](03-TUI应用启动.md) | `xai-grok-pager::app::run` | 已完成第一轮精读 |
 | 04 | Agent 应用循环 | `xai-grok-shell` 的 agent/session | 待阅读 |
 | 05 | 模型流式采样 | `xai-grok-sampler`、sampling types | 待阅读 |
 | 06 | 工具发现与调用 | tool runtime、computer hub、grok tools | 待阅读 |
