@@ -50,10 +50,20 @@ pub(super) fn ensure_dashboard_state(app: &mut AppView) {
     let mut state = dashboard_state_from_persisted(app);
     state.gc_stale_refs(&dashboard_alive_fn(&app.agents));
     state.adopt_slash_mru(app.slash_mru.clone());
+    state.adopt_command_tags(app.command_tags.clone());
     state.set_screen_mode(app.screen_mode);
     state.set_recap_visible(app.session_recap_available);
     state.set_voice_visible(app.voice_mode_enabled);
     state.set_restricted_commands(&app.tier_restricted_commands);
+    let billing = app.usage_visible;
+    state
+        .dispatch
+        .slash_controller
+        .set_billing_surface_visible(billing);
+    state
+        .peek_reply
+        .slash_controller
+        .set_billing_surface_visible(billing);
     app.dashboard = Some(state);
 }
 
@@ -358,13 +368,8 @@ pub(super) fn dispatch_dashboard_attach(
                 }
                 return vec![];
             }
-            if let Some(agent) = app.agents.get_mut(&parent)
-                && agent.subagent_views.contains_key(&child_session_id)
-            {
-                // Mirror `open_subagent_fullscreen`: load the resume-deferred
-                // child transcript on demand so the dashboard shows full history.
-                crate::app::subagent::ensure_subagent_child_replayed(agent, &child_session_id);
-                agent.active_subagent = Some(child_session_id.clone());
+            if let Some(agent) = app.agents.get_mut(&parent) {
+                agent.open_subagent_fullscreen(child_session_id.clone());
             }
             let row_id = DashboardRowId::Subagent {
                 parent,
@@ -1377,6 +1382,7 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
             session_id: None,
             bundle_state: &app.bundle_state,
             screen_mode: app.screen_mode,
+            billing_surface_visible: app.usage_visible,
             pager_state: crate::settings::PagerLocalSnapshot {
                 multiline_mode: dashboard_multiline,
                 yolo_mode: app.default_yolo,
@@ -1504,6 +1510,13 @@ pub(super) fn dispatch_dashboard_dispatch_slash(app: &mut AppView, text: String)
                 d.error_toast = None;
             }
             dispatch(action, app)
+        }
+        CommandResult::Doctor(_) => {
+            if let Some(d) = app.dashboard.as_mut() {
+                d.dispatch.set_text("");
+                d.set_error_toast("Open a session to run /doctor.");
+            }
+            vec![]
         }
         CommandResult::QueueCommand(_)
         | CommandResult::InjectSkill { .. }

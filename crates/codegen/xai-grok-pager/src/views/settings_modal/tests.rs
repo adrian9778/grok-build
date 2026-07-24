@@ -191,17 +191,22 @@ fn setting_row_visible_gates_voice_capture_on_key_releases() {
 #[test]
 fn setting_row_visible_hides_voice_rows_when_voice_mode_off() {
     let reg = SettingsRegistry::defaults();
+    let keybind = meta_for(&reg, "voice_keybind_enabled");
     let capture = meta_for(&reg, "voice_capture_mode");
     let language = meta_for(&reg, "voice_stt_language");
     let vim = meta_for(&reg, "vim_mode");
-    // Gate off: both voice rows gone even with kitty releases + full TUI.
+    // Gate off: all voice rows gone even with kitty releases + full TUI.
+    assert!(!setting_row_visible(keybind, true, false, false));
     assert!(!setting_row_visible(capture, true, false, false));
     assert!(!setting_row_visible(language, true, false, false));
     // Non-voice rows unaffected.
     assert!(setting_row_visible(vim, true, false, false));
-    // Gate on: both visible (kitty releases for capture).
+    // Gate on: all visible (kitty releases for capture).
+    assert!(setting_row_visible(keybind, true, false, true));
     assert!(setting_row_visible(capture, true, false, true));
     assert!(setting_row_visible(language, true, false, true));
+    // The keybind row (unlike capture) doesn't need key-release reporting.
+    assert!(setting_row_visible(keybind, false, false, true));
 }
 
 #[test]
@@ -648,12 +653,17 @@ fn rows_contain_categories_and_settings_through_pr_14() {
             "scroll_lines",
             "invert_scroll",
             "keep_text_selection",
+            // SHARED-owned combine_queued_prompts (Editor category; read by
+            // both the pager drain and the shell promote. Registered before
+            // multiline_mode, so it renders first).
+            "combine_queued_prompts",
             // PAGER-owned multiline (Editor category).
             "multiline_mode",
             // SHELL-owned prompt_suggestions (Editor; tab autocomplete
             // ghost text, live cache).
             "prompt_suggestions",
-            // voice_capture_mode + voice_stt_language hidden when gate is off.
+            // voice_keybind_enabled + voice_capture_mode + voice_stt_language
+            // hidden when the voice gate is off.
             // SHELL-owned permission_mode (Agent category).
             "permission_mode",
             // SHELL-owned remember_tool_approvals (Agent category,
