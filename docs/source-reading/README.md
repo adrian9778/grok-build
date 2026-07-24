@@ -12,7 +12,7 @@
 | 04 | [Agent 应用循环](04-Agent应用循环.md) | `xai-grok-shell` 的 agent/session | 已完成第一轮精读 |
 | 05 | [模型流式采样](05-模型流式采样.md) | `xai-grok-sampler`、sampling types | 已完成第一轮精读 |
 | 06 | [工具发现与调用](06-工具发现与调用.md) | tool runtime、computer hub、grok tools | 已完成第一轮精读 |
-| 07 | 文件编辑链路 | apply_patch、edit、write、workspace FS | 待阅读 |
+| 07 | [文件编辑链路](07-文件编辑链路.md) | apply_patch、edit、write、workspace FS | 已完成第一轮精读 |
 | 08 | 会话状态与持久化 | chat state、session storage、compaction | 待阅读 |
 | 09 | TUI 事件与渲染 | pager、pager-render、markdown | 待阅读 |
 | 10 | 权限与沙箱 | workspace permission、grok-sandbox | 待阅读 |
