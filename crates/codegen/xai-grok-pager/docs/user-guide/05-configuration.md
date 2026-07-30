@@ -27,8 +27,8 @@ Location: `~/.grok/config.toml`. If the file is missing, Grok uses its built-in 
 auto_update = true                     # check for updates on launch
 
 [models]
-default = "grok-build"                 # model used for new sessions
-web_search = "grok-4.20-multi-agent"   # model used by the web_search tool
+default = "grok-4.5"                   # model used for new sessions
+web_search = "grok-4.5"                # model used by the web_search tool
 
 # Defaults applied to every model; a per-model [model.<id>] value always wins.
 # See "Custom Models" for the per-model overrides and full details.
@@ -486,7 +486,7 @@ Keyboard shortcuts are **not** configurable — all bindings are built in. See [
 These are independent knobs (see [Monitoring Usage](24-monitoring-usage.md#related-settings)):
 
 - **`[features] telemetry`** / `GROK_TELEMETRY_ENABLED` — the product-analytics master switch. `/privacy` doesn't change it.
-- **`/privacy`** / Settings — coding-data sharing, separate from telemetry.
+- **Coding data, retention, and training** — the Settings row `/privacy` opens; coding-data sharing, separate from telemetry.
 - **`[telemetry] trace_upload`** / `GROK_TELEMETRY_TRACE_UPLOAD` — session traces; follows telemetry when unset.
 - **`[telemetry] otel_*`** / `GROK_EXTERNAL_OTEL` — external OTEL to your own collector (below).
 
