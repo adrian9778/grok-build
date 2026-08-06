@@ -56,7 +56,7 @@ pub enum Action {
     ExitSession,
     /// Exit session without double-press confirmation (e.g., from command palette).
     ExitSessionConfirmed,
-    /// `/delete`: confirm, then delete history and return home.
+    /// `/delete`: confirm, then delete history; return to welcome, or dashboard when attached.
     DeleteCurrentSession,
     DeleteCurrentSessionAnswered {
         confirmed: bool,
@@ -129,6 +129,9 @@ pub enum Action {
     /// load effect; under `--chat`, local Build disk rows are refused in
     /// dispatch (never coerced).
     LoadSession(String, Option<std::path::PathBuf>, bool),
+    /// Welcome Local workspace ACK confirmed (y); write ack + start session.
+    #[cfg(feature = "local-workspace")]
+    ConfirmWelcomeLocalWorkspaceAck,
     /// Create a new session with a client-chosen session ID (`--session-id`).
     NewSessionWithId(String),
     /// Startup `--fork-session`: fork `parent` then load the child.
@@ -782,13 +785,6 @@ pub enum Action {
         plan: Box<crate::diagnostics::FixPlan>,
     },
     DoctorFixCancelled(DoctorFixTarget),
-    /// User selected a project directory from the project picker.
-    ProjectSelected {
-        path: std::path::PathBuf,
-        stashed_prompt: String,
-        /// "Don't ask me again" was chosen: persist the opt-out.
-        disable_picker: bool,
-    },
     /// Persist the memory modal fullscreen preference to config.toml.
     PersistMemoryFullscreen(bool),
     /// Open the Agent Dashboard view (`/dashboard`, `Ctrl+\`, `grok dashboard`).
@@ -822,9 +818,12 @@ pub enum Action {
     DashboardCommitRename,
     /// Cancel an in-progress rename without committing.
     DashboardCancelRename,
-    /// Stop / kill the selected row (top-level: cancel turn → close;
-    /// subagent: kill). Double-press protected for top-level rows.
+    /// Ctrl+X on the selected row. Top-level: cancels a running turn on a
+    /// busy row, else double-press permanently deletes an idle row.
+    /// Subagent: kills the subagent.
     DashboardStop,
+    /// Confirm permanent delete of the armed dashboard row.
+    DashboardDelete,
     /// Cycle the dispatch input's mode for the next spawned agent
     /// (Normal → Plan → Always-Approve → Normal). Bound to Shift+Tab.
     DashboardCycleMode,
@@ -1378,8 +1377,10 @@ pub struct DoctorFixTarget {
 pub enum AfterSessionDelete {
     /// Picker delete — stay put.
     Stay,
-    /// `/delete` — return to welcome.
+    /// `/delete` from a standalone agent — return to welcome.
     Welcome,
+    /// `/delete` from a dashboard-attached agent, or dashboard row delete.
+    Dashboard,
 }
 #[derive(Debug)]
 pub enum Effect {
@@ -1399,7 +1400,7 @@ pub enum Effect {
         /// process-wide mode.
         chat_kind: bool,
     },
-    /// Change the process working directory (project-picker selection).
+    /// Change the process working directory (dashboard location picker, `/cd`).
     SetWorkingDir { path: std::path::PathBuf },
     /// Create a git worktree and then create or load an ACP session in it.
     /// When `load_session_id` is `Some`, loads that session in the new worktree
@@ -1470,6 +1471,10 @@ pub enum Effect {
         /// the response is dropped when no longer current, so out-of-order
         /// completions can't clobber newer results.
         seq: u64,
+        /// Optional unified-list `kind` facet filter (`"chat"` / `"build"`).
+        /// When set, stamped as `_meta["x.ai/facetFilters"].kind` so the shell
+        /// honors multi-source history under `--chat` instead of forcing chat-only.
+        kind_filter: Option<Vec<String>>,
     },
     /// Coalesce picker search keystrokes: fires
     /// [`TaskResult::SessionSearchDebounceExpired`] after a short sleep; the
@@ -1588,8 +1593,6 @@ pub enum Effect {
     PersistPrivacyBannerAcked { acked_at: String },
     /// Persist memory modal fullscreen preference to `[hints]` in config.toml.
     PersistMemoryFullscreen { fullscreen: bool },
-    /// Persist the project-picker opt-out to `[hints] project_picker_disabled`.
-    PersistProjectPickerDisabled { disabled: bool },
     /// Persist the dashboard's `[dashboard]` configuration to `~/.grok/config.toml`.
     /// Edge case 15: multi-pager safe via `config_toml_edit::read_config_document_for_edit`,
     /// which loads → modifies → writes the whole document. Concurrent
@@ -2046,12 +2049,16 @@ pub enum Effect {
         /// with `--fork-session`).
         new_session_id: Option<String>,
     },
-    /// Read the display title (and its `/rename` manual-ness) from local
-    /// `summary.json` (post-resume UI label + prompt-border title).
-    HydrateSessionTitleFromDisk {
+    /// Read session display fields from local `summary.json` after load/resume:
+    /// title (and `/rename` manual-ness) plus last-turn summary for the
+    /// dashboard secondary line.
+    HydrateSessionMetaFromDisk {
         agent_id: AgentId,
         session_id: acp::SessionId,
         cwd: std::path::PathBuf,
+        /// [`crate::app::agent_view::AgentView::last_turn_summary_gen`] at enqueue;
+        /// the disk result applies only when this still matches on completion.
+        last_turn_summary_gen: u64,
     },
     FetchRewindPoints {
         agent_id: AgentId,
@@ -2215,6 +2222,9 @@ pub enum TaskResult {
         code_restored: bool,
         restore_summary: Option<String>,
         restore_degree: Option<xai_grok_workspace::session::git::RestoreDegree>,
+        /// Resume/parent id this worktree was created from (`load_session_id`).
+        /// Used to retarget one-shot restore-code suppress onto the child.
+        resume_session_id: Option<String>,
     },
     /// Worktree session creation failed.
     WorktreeSessionFailed {
@@ -2246,13 +2256,18 @@ pub enum TaskResult {
         session_id: acp::SessionId,
         error: String,
     },
-    /// Local `summary.json` title read for [`Effect::HydrateSessionTitleFromDisk`].
-    SessionTitleFromDisk {
+    /// Local `summary.json` display fields for [`Effect::HydrateSessionMetaFromDisk`].
+    SessionMetaFromDisk {
         agent_id: AgentId,
         /// The display title paired with whether it came from a manual
         /// `/rename` (`summary.title_is_manual`, restores the prompt-border
         /// title) — manual-ness cannot exist without a title.
         title: Option<(String, bool)>,
+        /// Persisted per-turn dashboard summary, so a resumed session's row
+        /// shows it without waiting for the next turn.
+        last_turn_summary: Option<String>,
+        /// Generation captured when the hydrate effect was enqueued.
+        last_turn_summary_gen: u64,
     },
     /// Session list fetched for the welcome screen picker.
     SessionListLoaded {
@@ -2755,6 +2770,9 @@ pub enum TaskResult {
         agent_id: AgentId,
         new_session_id: acp::SessionId,
         cwd: std::path::PathBuf,
+        /// Parent session id the fork was taken from (for one-shot
+        /// restore-code suppress retarget).
+        parent_session_id: acp::SessionId,
     },
     /// `x.ai/session/fork` failed. The placeholder agent stays in
     /// `app.agents` with no `session_id` so the user can switch away.

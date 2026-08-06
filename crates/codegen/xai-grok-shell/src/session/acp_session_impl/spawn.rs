@@ -1,5 +1,10 @@
 //! Session bring-up concern for `acp_session`: `spawn_session_actor`, the
 //! per-session OS thread (`SessionThread` / `spawn_session_on_thread`), and
+//!
+//! Chat+local `own` supervisor (`gateway_bridge::local_workspace_supervisor`) is
+//! started in `session/new` *before* handshake stamp and stored on `MvpAgent`
+//! (not `SessionActor`). Crash-restart issues
+//! `BridgeCommand::UpdateComputerSessions` through the bridge slot seeded here.
 //! the MCP auto-restart wiring (`SessionRestartActions`).
 #![allow(clippy::items_after_test_module)]
 use super::*;
@@ -307,6 +312,7 @@ pub(crate) async fn spawn_session_actor(
     >,
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,
+    is_chat_kind: bool,
 ) -> Result<
     (
         SessionHandle,
@@ -443,6 +449,9 @@ pub(crate) async fn spawn_session_actor(
         .filter(|item| matches!(item, ConversationItem::User(_)))
         .count();
     let initial_conversation_len = conversation.len();
+    let initial_last_recap_main_turn = crate::session::helpers::session_recap::load_recap_watermark(
+        &crate::session::persistence::session_dir(&session_info),
+    );
     let initial_user_count = initial_prompt_index.saturating_sub(1) as u32;
     let initial_assistant_count = conversation
         .iter()
@@ -571,6 +580,7 @@ pub(crate) async fn spawn_session_actor(
         pending_notifications: Vec::new(),
         notifications_suppressed: false,
         rewindable: false,
+        front_message_committed: false,
         nudges_used_this_session: 0,
     });
     let mcp_strategy = match std::env::var("MCP_INIT_STRATEGY") {
@@ -625,8 +635,9 @@ pub(crate) async fn spawn_session_actor(
         };
         Arc::new(parking_lot::Mutex::new(tracker))
     };
-    let current_prompt_mode = Arc::new(parking_lot::Mutex::new(PromptMode::Agent));
-    let turn_prompt_mode = Arc::new(parking_lot::Mutex::new(PromptMode::Agent));
+    let restored_prompt_mode = plan_mode.lock().session_prompt_mode();
+    let current_prompt_mode = Arc::new(parking_lot::Mutex::new(restored_prompt_mode));
+    let turn_prompt_mode = Arc::new(parking_lot::Mutex::new(restored_prompt_mode));
     let task_output_tool_name = Arc::new(std::sync::OnceLock::new());
     let read_tool_name = Arc::new(std::sync::OnceLock::new());
     let queue_exit_reminder_on_approved_exit = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1546,11 +1557,13 @@ pub(crate) async fn spawn_session_actor(
         model_auth_memo: std::cell::RefCell::new(None),
         attribution_callback,
         auth_manager,
+        is_chat_kind,
         state,
         notifications: NotificationSender {
             gateway: gateway.clone(),
             gateway_enabled: gateway_enabled.clone(),
             persistence_tx: persistence.tx.clone(),
+            disk_full: persistence.subscribe_disk_full(),
         },
         permissions,
         tool_context,
@@ -1586,6 +1599,7 @@ pub(crate) async fn spawn_session_actor(
             tool_choice: compaction_tool_choice,
             prefire: crate::session::compaction_config::PrefireState::default(),
             prefix_released: std::sync::atomic::AtomicBool::new(false),
+            cancel: Default::default(),
         },
         memory: super::memory_state::SessionMemory {
             flush_config: memory_config.as_ref().map_or_else(
@@ -1660,7 +1674,7 @@ pub(crate) async fn spawn_session_actor(
         queue_exit_reminder_on_approved_exit,
         active_skill: parking_lot::Mutex::new(None),
         current_prompt_mode: current_prompt_mode.clone(),
-        turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),
+        turn_start_prompt_mode: parking_lot::Mutex::new(restored_prompt_mode),
         turn_prompt_mode: turn_prompt_mode.clone(),
         plan_mode: plan_mode.clone(),
         goal_enabled,
@@ -1742,9 +1756,12 @@ pub(crate) async fn spawn_session_actor(
         ),
         observability_bridge: obs_bridge,
         current_turn_number: std::cell::Cell::new(0),
-        last_recap_main_turn: std::cell::Cell::new(0),
+        last_recap_main_turn: std::cell::Cell::new(initial_last_recap_main_turn),
         recap_in_flight: std::cell::Cell::new(false),
         recap_epoch: std::cell::Cell::new(0),
+        turn_summary_task: std::cell::RefCell::new(None),
+        turn_summary_generation: std::cell::Cell::new(0),
+        turn_summary_enabled: effective_config.is_turn_summary_enabled(),
         session_turn_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         streaming_turn_capture: parking_lot::Mutex::new(StreamingTurnCapture::default()),
         turn_stream_drained: parking_lot::Mutex::new(None),
@@ -2257,6 +2274,7 @@ pub(crate) async fn spawn_session_on_thread(
     >,
     max_turns: Option<usize>,
     forked_tool_override: Option<Vec<ToolSpec>>,
+    is_chat_kind: bool,
 ) -> Result<
     (
         SessionHandle,
@@ -2425,6 +2443,7 @@ pub(crate) async fn spawn_session_on_thread(
                         parent_scheduler_handle,
                         max_turns,
                         forked_tool_override,
+                        is_chat_kind,
                     )
                     .await
                     {
