@@ -1,5 +1,7 @@
 # 04 Agent、会话与模型循环源码精读
 
+> **全局调用位置**：`MvpAgent::prompt → SessionCommand::Prompt → SessionActor::handle_prompt → process_conversation_turn → ChatStateHandle::build_request → run_turn_via_sampler`。具体符号关系见 [源码符号关系总览第 6–10 节](12-源码符号关系总览.md#6-acp-prompt-到-sessioncommand)，普通 Prompt 和模型流逐函数过程见 [关键调用链第 4–6 节](13-关键调用链逐函数精读.md#4-调用链三mvpagentprompt-到-session-actor)。
+
 > 本文面向第一次接触 Rust、Actor 和大模型工具循环的读者。目标不是只说明“代码在哪里”，而是解释这些 crate 为什么被拆开、状态由谁拥有、一次用户输入怎样穿过系统、失败后怎样收敛，以及如何依据本文从零重写一个兼容实现。
 
 ## 1. 阅读范围与结论先行

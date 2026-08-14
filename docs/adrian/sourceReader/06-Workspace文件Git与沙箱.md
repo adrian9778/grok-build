@@ -1,5 +1,7 @@
 # Workspace、文件、Git、执行与沙箱源码精读
 
+> **全局调用位置**：工具通过 `AsyncFileSystem` 或 `WorkspaceOps` 使用主机能力；远端路径为 `WorkspaceClient::rpc<R> → rpc_raw → ToolHarness::call(workspace_rpc) → WorkspaceOp::execute`。Local/Proxy 关系见 [源码符号关系总览第 13–14 节](12-源码符号关系总览.md#13-workspace-本地与-proxy-双路径)，文件和 RPC 逐函数流程见 [关键调用链第 8–9 节](13-关键调用链逐函数精读.md#8-调用链七工具读取或写入文件)。
+
 > 本文面向第一次接触本工程的读者，也面向希望从零重新实现这套能力的人。
 >
 > 精读范围仅包含以下 11 个 crate：`xai-grok-workspace`、`xai-grok-workspace-client`、`xai-grok-workspace-types`、`xai-grok-sandbox`、`xai-file-utils`、`xai-fast-worktree`、`xai-gix-status`、`xai-hunk-tracker`、`xai-fsnotify`、`xai-codebase-graph`、`xai-sqlite-journal`。

@@ -1,5 +1,7 @@
 # Grok Build TUI 交互与渲染源码精读
 
+> **全局调用位置**：`event_loop::run → AppView input handler → dispatch::dispatch → effects::execute → JoinSet<TaskResult> → Action::TaskComplete`。完整关系见 [源码符号关系总览第 5 节](12-源码符号关系总览.md#5-tui-的代码关系action--effect--taskresult)，Prompt 提交逐函数过程见 [关键调用链第 3 节](13-关键调用链逐函数精读.md#3-调用链二用户按-enter-到-acp-promptrequest)。
+
 > 本文面向第一次阅读 Rust TUI 项目的开发者。目标不是只回答“用了 Ratatui”，而是解释一次输入如何穿过终端、事件循环、状态机、副作用执行器、布局与渲染器，最后变成用户看到的字符；同时说明异常、并发、PTY 测试和终端恢复如何保证这个过程可控。
 
 ## 1. 本文范围与阅读目标

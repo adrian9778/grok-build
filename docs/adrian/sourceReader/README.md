@@ -1,6 +1,18 @@
 # Grok Build 源码精读与重实现手册
 
-这套文档面向第一次阅读大型 Rust 异步工程的开发者。它的目标不是翻译源码注释，而是建立一套能够指导重新实现的系统模型：入口如何组合，状态由谁拥有，事件怎样流动，工具如何产生副作用，失败和取消怎样收敛，以及每个 crate 为什么存在。
+这套文档面向第一次阅读大型 Rust 异步工程的开发者。它的目标不是翻译源码注释，而是建立一套能够指导重新实现的系统模型：入口如何组合，具体函数怎样互相调用，状态由谁拥有，事件怎样跨 task/进程流动，工具如何产生副作用，失败和取消怎样收敛，以及每个 crate 为什么存在。
+
+## 文档权威层次
+
+整理后的文档分为四层。同一个问题优先查更高的权威入口，再下钻专题，避免在多篇文档中寻找互相重复的描述。
+
+| 层次 | 权威文档 | 回答的问题 |
+|---|---|---|
+| 阅读方法 | `00`、`11` | 新手如何读 Rust workspace、如何搜索符号 |
+| 全局关系 | `01`、`12` | crate、进程、Actor、trait 和数据事实源如何连接 |
+| 执行过程 | `09`、`13` | 一次请求概念上和逐函数上如何执行 |
+| 领域专题 | `02`–`08` | 单个领域内部的文件、算法、测试和失败语义 |
+| 实施与可靠性 | `可靠性说明书`、`10` | 怎样安全重实现、测试和恢复 |
 
 ## 一页阅读地图
 
@@ -8,7 +20,9 @@
 flowchart TD
     START["第一次进入工程"] --> GUIDE["00 阅读说明与学习路线"]
     GUIDE --> MAP["01 全仓源码地图与依赖层次"]
-    MAP --> ENTRY["02 程序入口与运行模式"]
+    MAP --> RELMAP["12 源码符号关系总览"]
+    RELMAP --> TRACE["13 关键调用链逐函数精读"]
+    TRACE --> ENTRY["02 程序入口与运行模式"]
     ENTRY --> TUI["03 TUI 交互与渲染"]
     ENTRY --> AGENT["04 Agent 会话与模型循环"]
     AGENT --> TOOL["05 工具协议与扩展体系"]
@@ -22,6 +36,11 @@ flowchart TD
     REL --> REBUILD["10 从零重实现路线图"]
     MAP --> TERMS["11 术语表与源码查找手册"]
 ```
+
+图中 `12` 与 `13` 是这次重整后新增的核心入口：
+
+- `12` 的 Mermaid 节点使用真实 crate、文件和 Rust 符号；
+- `13` 将启动、Prompt、采样、工具、Workspace RPC、权限、取消、恢复和退出拆成逐函数步骤。
 
 ## 文档目录
 
@@ -40,21 +59,23 @@ flowchart TD
 | 横切 | [可靠性与通用技术实现说明书](可靠性与通用技术实现说明书.md) | 承诺点、幂等、重试、取消、结果未知、背压和故障注入 |
 | 10 | [从零重实现路线图](10-从零重实现路线图.md) | 从空 workspace 到完整产品的分阶段实现顺序 |
 | 11 | [术语表与源码查找手册](11-术语表与源码查找手册.md) | 术语、常见误解、从行为/错误反查源码的方法 |
+| 12 | [源码符号关系总览](12-源码符号关系总览.md) | crate、进程、Actor、trait、channel 和具体函数关系 |
+| 13 | [关键调用链逐函数精读](13-关键调用链逐函数精读.md) | 12 条关键场景怎样在真实源码中逐步执行 |
 
 ## 三条使用路径
 
 ### 路径 A：第一次理解工程
 
 ```text
-00 → 01 → 02 → 04 → 05 → 06 → 09
+00 → 01 → 12 → 13 → 02 → 04 → 05 → 06
 ```
 
-这条路线先忽略大量 UI 和基础设施细节，尽快建立 Prompt → Model → Tool → Workspace → Model 的核心回边。
+这条路线先建立具体符号关系，再按领域下钻，能够尽快看懂 Prompt → Model → Tool → Workspace → Model 的核心回边。
 
 ### 路径 B：准备维护现有代码
 
 ```text
-00 → 01 → 目标专题 → 11 → 对应测试索引 → 可靠性说明
+11 → 12 → 13 的影响分析模板 → 目标专题 → 对应测试索引
 ```
 
 先确定事实源和责任层，再修改局部代码。不要根据 UI 文案或错误字符串猜控制流。
@@ -62,27 +83,33 @@ flowchart TD
 ### 路径 C：从零重新实现
 
 ```text
-01 → 09 → 可靠性说明 → 10 → 02/04/05/06 → 03/07/08
+01 → 12 → 13 → 可靠性说明 → 10 → 02/04/05/06 → 03/07/08
 ```
 
 先理解边界和不变量，再按阶段实现。原仓库的 crate 数量是演进结果，不需要在第一天复制。
 
 ## 核心心智模型
 
-```text
-用户输入
-  → TUI 单写者状态机
-  → ACP 协议适配
-  → Session Actor
-  → ChatState 请求视图
-  → Sampler 模型流
-  → ToolCall
-  → Tool Registry / Permission
-  → Workspace 主机副作用
-  → ToolResult
-  → 下一轮采样或最终回复
-  → ACP notification/response
-  → TUI 渲染
+```mermaid
+flowchart LR
+    INPUT["Terminal Event"] --> VIEW["AppView input handler"]
+    VIEW --> ACTION["Action"]
+    ACTION --> DISPATCH["dispatch::dispatch"]
+    DISPATCH --> EFFECT["Effect::SendPrompt"]
+    EFFECT --> ACP["AcpAgentTx"]
+    ACP --> MVP["MvpAgent::prompt"]
+    MVP --> CMD["SessionCommand::Prompt"]
+    CMD --> TURN["SessionActor::handle_prompt"]
+    TURN --> BUILD["ChatStateHandle::build_request"]
+    BUILD --> SAMPLE["run_turn_via_sampler"]
+    SAMPLE --> EVENT["SamplingEvent"]
+    EVENT --> CALLS["execute_tool_calls_batch"]
+    CALLS --> TOOL["ToolDyn → Tool::run"]
+    TOOL --> WS["WorkspaceOps / AsyncFileSystem"]
+    WS --> RESULT["ToolResult"]
+    RESULT --> BUILD
+    EVENT -->|final| RESP["PromptTurnResult"]
+    RESP --> ACP
 ```
 
 必须始终记住：
@@ -131,4 +158,5 @@ flowchart TD
 - 能解释 Permission 与 Sandbox 的区别；
 - 能列出退出时需要恢复/回收的终端和进程资源；
 - 能按 [从零重实现路线图](10-从零重实现路线图.md) 切出第一个端到端纵切片。
-
+- 能从 [源码符号关系总览](12-源码符号关系总览.md) 指出任意跨 crate 边使用的是直接调用、channel、trait 还是 wire protocol；
+- 能按 [关键调用链逐函数精读](13-关键调用链逐函数精读.md) 从 `Effect::SendPrompt` 跟到 `PromptTurnResult`，并沿 ToolResult 回到下一轮采样。
