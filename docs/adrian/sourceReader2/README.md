@@ -39,18 +39,20 @@ flowchart TD
 
 ## 与已有文档的关系
 
-`docs/source-reading/` 是按 01–10 形成的第一轮调用链笔记；本目录是全项目学习入口。遇到需要逐函数展开的主题，可继续阅读：
+本目录是更短的新手地图（由原 `docs/sourcecode1/` 迁入）。完整重构级指南以 [`../sourceReader/README.md`](../sourceReader/README.md) 为准。
 
-- [程序入口与启动分发](../source-reading/01-程序入口与启动分发.md)
-- [CLI 参数模型与 Clap](../source-reading/02-CLI参数模型与Clap.md)
-- [TUI 应用启动](../source-reading/03-TUI应用启动.md)
-- [Agent 应用循环](../source-reading/04-Agent应用循环.md)
-- [模型流式采样](../source-reading/05-模型流式采样.md)
-- [工具发现与调用](../source-reading/06-工具发现与调用.md)
-- [文件编辑链路](../source-reading/07-文件编辑链路.md)
-- [会话状态与持久化](../source-reading/08-会话状态与持久化.md)
-- [TUI 事件与渲染](../source-reading/09-TUI事件与渲染.md)
-- [权限与沙箱](../source-reading/10-权限与沙箱.md)
+`docs/source-reading/` 是按 01–10 形成的第一轮调用链笔记。遇到需要逐函数展开的主题，优先读：
+
+- [程序入口与启动分发](../../source-reading/01-程序入口与启动分发.md)
+- [CLI 参数模型与 Clap](../../source-reading/02-CLI参数模型与Clap.md)
+- [TUI 应用启动](../../source-reading/03-TUI应用启动.md)
+- [Agent 应用循环](../../source-reading/04-Agent应用循环.md)
+- [模型流式采样](../../source-reading/05-模型流式采样.md)
+- [工具发现与调用](../../source-reading/06-工具发现与调用.md)
+- [文件编辑链路](../../source-reading/07-文件编辑链路.md)
+- [会话状态与持久化](../../source-reading/08-会话状态与持久化.md)
+- [TUI 事件与渲染](../../source-reading/09-TUI事件与渲染.md)
+- [权限与沙箱](../../source-reading/10-权限与沙箱.md)
 
 ## 每次阅读的固定记录法
 
