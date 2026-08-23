@@ -108,6 +108,94 @@ pub enum AccessKind {
     Web,
 }
 
+/// Outcome of one CLI binary install/update attempt.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CliUpdateOutcome {
+    Success,
+    Failed,
+}
+
+/// Why a CLI binary install/update failed. Smoke kinds are post-download
+/// `--version` checks; other kinds cover download/activation/misc errors.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CliUpdateErrorKind {
+    SmokeTimeout,
+    SmokeNonzero,
+    SmokeSpawn,
+    Download,
+    Activate,
+    Other,
+}
+
+/// Installer that performed the attempt. Wire values match the persisted
+/// installer strings; `Other` bounds unknown persisted values.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CliUpdateInstaller {
+    #[serde(rename = "npm")]
+    Npm,
+    #[serde(rename = "gh-release")]
+    GhRelease,
+    #[serde(rename = "internal")]
+    Internal,
+    #[serde(rename = "other")]
+    Other,
+}
+
+impl CliUpdateInstaller {
+    /// Kept next to the wire values above so they cannot drift apart.
+    pub fn from_installer_str(installer: &str) -> Self {
+        match installer {
+            "npm" => Self::Npm,
+            "gh-release" => Self::GhRelease,
+            "internal" => Self::Internal,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// What kicked off the install/update. Travels across the process boundary
+/// as `--trigger=<value>`; [`CliUpdateTrigger::as_str`] and `FromStr` are
+/// the one rendering (round-trip pinned with the wire values in tests).
+///
+/// Volume caveat: one-shot `grok update` resolves telemetry from disk+env
+/// only, so `user_command` under-reports relative to the in-process
+/// `leader_converge` — the triggers are not directly comparable.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CliUpdateTrigger {
+    /// A human ran `grok update` or accepted an update prompt.
+    UserCommand,
+    /// TUI/stdio launch check spawned a detached update child.
+    AutoBackground,
+    /// The leader daemon's hourly in-process converge.
+    LeaderConverge,
+}
+
+impl CliUpdateTrigger {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::UserCommand => "user_command",
+            Self::AutoBackground => "auto_background",
+            Self::LeaderConverge => "leader_converge",
+        }
+    }
+}
+
+impl std::str::FromStr for CliUpdateTrigger {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user_command" => Ok(Self::UserCommand),
+            "auto_background" => Ok(Self::AutoBackground),
+            "leader_converge" => Ok(Self::LeaderConverge),
+            other => Err(format!("unknown update trigger: {other}")),
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionOutcome {
@@ -206,6 +294,14 @@ pub enum PlanModeState {
     Inactive,
     Pending,
     Active,
+}
+
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRetrievalMode {
+    Disabled,
+    FtsOnly,
+    Hybrid,
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -979,6 +1075,7 @@ pub struct SessionHarness {
     pub hook_names: Vec<String>,
     pub agents_md_dir_names: Vec<String>,
     pub memory_enabled: bool,
+    pub memory_retrieval_mode: MemoryRetrievalMode,
     /// Whether the session cwd is inside a git repo (same value `SessionNew`
     /// carries). Additive analytics-visible field, added for the external
     /// `session_start` event (design ‡ footnote).
@@ -1229,10 +1326,25 @@ pub struct ShellTrueNoop {
     pub tool_name: String,
 }
 
+/// Harness nudged the model to break a run of identical tool calls. Pairs with
+/// [`ActionStationarityStop`]: the nudge fires first and once per run, the stop only
+/// if the run continues to the hard limit.
+///
+/// `problematically_repeating` splits the two threshold tiers (tools whose identical
+/// repeats are never productive versus everything else), so nudge and stop each break
+/// down by tier.
+#[derive(Serialize)]
+pub struct ActionStationarityNudge {
+    pub problematically_repeating: bool,
+    pub run_len: u32,
+    pub tool_name: String,
+}
+
 /// Harness hard-stopped a turn after identical tool thrash (silent EndTurn).
 #[derive(Serialize)]
 pub struct ActionStationarityStop {
     pub true_noop: bool,
+    pub problematically_repeating: bool,
     pub run_len: u32,
     pub tool_name: String,
 }
@@ -1244,7 +1356,7 @@ pub struct ActionStationarityStop {
 #[derive(Serialize)]
 pub struct ToolCallCompleted {
     pub tool_name: String,
-    pub outcome: xai_file_utils::events::types::ToolOutcome,
+    pub outcome: xai_grok_session_events::types::ToolOutcome,
     pub duration_ms: u64,
     /// Primary file path of the call, for the external stream only
     /// (`#[serde(skip)]`: never serialized to product events/analytics). Always reduced to
@@ -1731,6 +1843,39 @@ pub struct ExternalOtelExportHealth {
     pub export_successes: u64,
 }
 
+/// Once per session. Carries no `command` string or script output.
+#[derive(Serialize)]
+pub struct StatusLineConfigured {
+    /// `unset` when the config named no mode, which is adoption's denominator.
+    pub kind: &'static str,
+    /// Always `false` once the user wrote `type = "disabled"`, and reported even
+    /// by a client that draws no row.
+    pub row_shows_a_problem: bool,
+    pub items: String,
+    pub custom_items: bool,
+    /// `refresh_interval` was set, whether or not the mode lets it schedule.
+    pub custom_refresh_interval: bool,
+    /// The retired `refresh_interval_ms` key was still present, so the
+    /// retirement problem's audience is visible in adoption data.
+    pub has_retired_refresh_interval_ms: bool,
+}
+
+/// How the status line fared, at shutdown, for every session that enabled it.
+#[derive(Serialize)]
+pub struct StatusLineHealth {
+    pub kind: &'static str,
+    /// A run's error text counts, a config diagnostic does not, so `false` can
+    /// still mean a bar that showed one all session.
+    pub had_content: bool,
+    pub runs_ok: u64,
+    /// Shown on the row as `[status line: …]`.
+    pub runs_failed: u64,
+    pub runs_timed_out: u64,
+    /// Given up on; counted again under its outcome if it ever lands.
+    pub runs_abandoned: u64,
+    pub slowest_ms: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Credit limit
 // ---------------------------------------------------------------------------
@@ -1863,11 +2008,56 @@ pub struct ManualAuth {
     pub principal: Option<String>,
 }
 
+/// Release channel bucketed to the known set: channel is free-text user
+/// config, and recording it verbatim would leak private mirror names.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CliUpdateChannel {
+    Stable,
+    Alpha,
+    Enterprise,
+    Other,
+}
+
+impl CliUpdateChannel {
+    /// Empty means stable — the installers' default (mirrors the updater's
+    /// `is_stable_channel`).
+    pub fn from_channel_str(raw: &str) -> Self {
+        match raw.trim() {
+            "" | "stable" => Self::Stable,
+            "alpha" => Self::Alpha,
+            "enterprise" => Self::Enterprise,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// One attempt to download + activate a new `grok` binary. Analytics name:
+/// `grok-shell-cli_update`. Emitted on failure too; failures carry the
+/// typed `error_kind` only — freeform strings leak home paths.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct CliUpdate {
+    pub outcome: CliUpdateOutcome,
+    pub trigger: CliUpdateTrigger,
+    pub from_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_version: Option<String>,
+    pub channel: CliUpdateChannel,
+    pub installer: CliUpdateInstaller,
+    /// `{os}-{arch}` from platform detection — closed by construction.
+    pub platform: String,
+    pub rosetta: bool,
+    pub duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_kind: Option<CliUpdateErrorKind>,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Event name bindings
 // ─────────────────────────────────────────────────────────────────────────────
 
 telemetry_event!(ManualAuth, "manual_auth");
+telemetry_event!(CliUpdate, "cli_update");
 
 telemetry_event!(Login, "login", external = crate::external::schema::map_auth);
 telemetry_event!(LoginPickerShown, "login_picker_shown");
@@ -2006,6 +2196,7 @@ telemetry_event!(
     external = crate::external::schema::map_turn_completed
 );
 telemetry_event!(ShellTrueNoop, "shell_true_noop");
+telemetry_event!(ActionStationarityNudge, "action_stationarity_nudge");
 telemetry_event!(ActionStationarityStop, "action_stationarity_stop");
 telemetry_event!(
     ToolCallCompleted,
@@ -2062,6 +2253,8 @@ telemetry_event!(CreditLimitHit, "credit_limit_hit");
 telemetry_event!(CreditLimitUpsellShown, "credit_limit_upsell_shown");
 telemetry_event!(CreditLimitUpsellClicked, "credit_limit_upsell_clicked");
 telemetry_event!(SubscriptionActivated, "subscription_activated");
+telemetry_event!(StatusLineConfigured, "status_line_configured");
+telemetry_event!(StatusLineHealth, "status_line_health");
 telemetry_event!(
     ApiError,
     "api_error",
@@ -2114,10 +2307,6 @@ telemetry_event!(
 );
 telemetry_event!(crate::memory_telemetry::MemorySearch, "memory_search");
 telemetry_event!(
-    crate::memory_telemetry::MemorySearchEmpty,
-    "memory_search_empty"
-);
-telemetry_event!(
     crate::memory_telemetry::MemoryFlushStart,
     "memory_flush_start"
 );
@@ -2163,6 +2352,19 @@ mod tests {
             clipboard_native_tool: "arboard".into(),
             clipboard_data_control: "n/a".into(),
         }
+    }
+
+    #[test]
+    fn memory_retrieval_mode_serializes_as_closed_snake_case_values() {
+        let modes = [
+            MemoryRetrievalMode::Disabled,
+            MemoryRetrievalMode::FtsOnly,
+            MemoryRetrievalMode::Hybrid,
+        ];
+        assert_eq!(
+            modes.map(|mode| serde_json::to_value(mode).unwrap()),
+            ["disabled", "fts_only", "hybrid"]
+        );
     }
 
     #[test]
@@ -2479,6 +2681,111 @@ mod tests {
             err,
             serde_json::json!({ "ok": false, "error": "failed to write key" })
         );
+    }
+
+    #[test]
+    fn cli_update_event_name_and_serde() {
+        assert_eq!(CliUpdate::NAME, "cli_update");
+        let ok = serde_json::to_value(CliUpdate {
+            outcome: CliUpdateOutcome::Success,
+            trigger: CliUpdateTrigger::UserCommand,
+            from_version: "0.2.118".into(),
+            to_version: Some("0.2.120".into()),
+            channel: CliUpdateChannel::Alpha,
+            installer: CliUpdateInstaller::Internal,
+            platform: "macos-x86_64".into(),
+            rosetta: true,
+            duration_ms: 12_000,
+            error_kind: None,
+        })
+        .unwrap();
+        assert_eq!(
+            ok,
+            serde_json::json!({
+                "outcome": "success",
+                "trigger": "user_command",
+                "from_version": "0.2.118",
+                "to_version": "0.2.120",
+                "channel": "alpha",
+                "installer": "internal",
+                "platform": "macos-x86_64",
+                "rosetta": true,
+                "duration_ms": 12000,
+            })
+        );
+        let fail = serde_json::to_value(CliUpdate {
+            outcome: CliUpdateOutcome::Failed,
+            trigger: CliUpdateTrigger::AutoBackground,
+            from_version: "0.2.118".into(),
+            to_version: Some("0.2.120".into()),
+            channel: CliUpdateChannel::Alpha,
+            installer: CliUpdateInstaller::Internal,
+            platform: "macos-x86_64".into(),
+            rosetta: true,
+            duration_ms: 60_100,
+            error_kind: Some(CliUpdateErrorKind::SmokeTimeout),
+        })
+        .unwrap();
+        assert_eq!(fail["outcome"], "failed");
+        assert_eq!(fail["error_kind"], "smoke_timeout");
+        assert_eq!(fail["trigger"], "auto_background");
+        assert!(fail.get("error").is_none());
+        assert_eq!(
+            serde_json::to_value(CliUpdateTrigger::LeaderConverge).unwrap(),
+            "leader_converge"
+        );
+        // Trigger as_str / FromStr / serde are one rendering.
+        for t in [
+            CliUpdateTrigger::UserCommand,
+            CliUpdateTrigger::AutoBackground,
+            CliUpdateTrigger::LeaderConverge,
+        ] {
+            assert_eq!(serde_json::to_value(t).unwrap(), t.as_str());
+            assert_eq!(t.as_str().parse::<CliUpdateTrigger>().unwrap(), t);
+        }
+        assert!("bogus".parse::<CliUpdateTrigger>().is_err());
+        // Wire values and from_installer_str round-trip — one mapping.
+        for (installer, wire) in [
+            (CliUpdateInstaller::Npm, "npm"),
+            (CliUpdateInstaller::GhRelease, "gh-release"),
+            (CliUpdateInstaller::Internal, "internal"),
+            (CliUpdateInstaller::Other, "other"),
+        ] {
+            assert_eq!(serde_json::to_value(installer).unwrap(), wire);
+            assert_eq!(CliUpdateInstaller::from_installer_str(wire), installer);
+        }
+        assert_eq!(
+            CliUpdateInstaller::from_installer_str("homebrew"),
+            CliUpdateInstaller::Other
+        );
+    }
+
+    /// Private mirror names bucket to Other; empty means stable.
+    #[test]
+    fn cli_update_channel_buckets() {
+        assert_eq!(
+            CliUpdateChannel::from_channel_str(" alpha "),
+            CliUpdateChannel::Alpha
+        );
+        assert_eq!(
+            CliUpdateChannel::from_channel_str(""),
+            CliUpdateChannel::Stable
+        );
+        assert_eq!(
+            CliUpdateChannel::from_channel_str("stable"),
+            CliUpdateChannel::Stable
+        );
+        assert_eq!(
+            CliUpdateChannel::from_channel_str("enterprise"),
+            CliUpdateChannel::Enterprise
+        );
+        for private in ["acme-mirror.1", "x'; rm -rf ~;'", "a b"] {
+            assert_eq!(
+                CliUpdateChannel::from_channel_str(private),
+                CliUpdateChannel::Other,
+                "{private:?} must bucket to other"
+            );
+        }
     }
 
     #[test]
