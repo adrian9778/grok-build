@@ -101,8 +101,13 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 | `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
 | `crates/codegen/xai-grok-tools` | Tool implementations (terminal, file edit, search, ...) |
 | `crates/codegen/xai-grok-workspace` | Host filesystem, VCS, execution, checkpoints |
+| `crates/codegen/xai-grok-dashboard-store` | SQLite-backed persistent dashboard workspace store |
+| `crates/common/xai-computer-hub-core` | Computer Hub core functionality and tool registry |
+| `crates/common/xai-computer-hub-sdk` | Computer Hub SDK for external integrations |
+| `crates/common/xai-computer-hub-mcp-adapter` | Model Context Protocol (MCP) adapter for Computer Hub |
+| `crates/common/xai-message-delivery-core` | Message delivery primitives and authorization |
 | `crates/codegen/...` | The rest of the CLI crate closure (config, MCP, markdown, sandbox, ...) |
-| `crates/common/`, `crates/build/`, `prod/mc/` | Small shared leaf crates pulled in by the closure |
+| `crates/common/...`, `crates/build/`, `prod/mc/` | Small shared leaf crates pulled in by the closure |
 | `third_party/` | Vendored upstream source (Mermaid diagram stack) — see below |
 
 > [!IMPORTANT]

@@ -133,6 +133,8 @@ User-level configuration lives in `$GROK_HOME/config.toml` (default `~/.grok/con
 | --- | --- | --- | --- | --- |
 | `dashboard.enabled` | `boolean` | `yes` | `user` | Show the agent dashboard. |
 | `dashboard.grouping` | `state / directory` | `yes` | `user` | How dashboard rows group. |
+| `dashboard.pinned` | `array of strings` | `yes` | `user` | Pinned session IDs (format: `top:<session_id>` or `sub:<parent>:<child>`). |
+| `dashboard.reorder` | `array of strings` | `yes` | `user` | Custom ordering for pinned sessions. |
 
 ### `default_auto_mode`
 

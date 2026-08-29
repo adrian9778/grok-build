@@ -4,7 +4,7 @@
 
 > **场景**：一个工具要「读文件 / 写文件 / 跑命令 / 改 Git」，但有三条线必须同时满足——(1) **Workspace 边界**：操作只能发生在工作区之内；(2) **权限边界**：每次敏感操作要过配置规则 + 运行时授权两道关卡；(3) **OS 沙箱边界**：进程级用 Landlock/Seatbelt 兜底，子进程网络按 seccomp 封禁。本章把这三件事拆开讲清楚。
 >
-> **阅读说明**：源码基准 `SOURCE_REV = 437c7c928f3fcd13e9d37a51d887f41d7f84185d`。三个子系统分别在：`crates/codegen/xai-grok-workspace-client`（Git/文件 RPC 客户端）、`crates/codegen/xai-grok-workspace/src/permission`（权限双层）、`crates/codegen/xai-grok-sandbox`（OS 级沙箱）。所有 `file:line` 对应当前工作区代码。
+> **阅读说明**：源码基准 `SOURCE_REV = d5a0335a47221e8c9519936cb693e9b6450227ec`。三个子系统分别在：`crates/codegen/xai-grok-workspace-client`（Git/文件 RPC 客户端）、`crates/codegen/xai-grok-workspace/src/permission`（权限双层）、`crates/codegen/xai-grok-sandbox`（OS 级沙箱）。所有 `file:line` 对应当前工作区代码。
 
 ---
 

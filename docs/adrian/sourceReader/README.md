@@ -75,7 +75,7 @@ flowchart TD
 
 ## 源码规模（阅读时的心理预期）
 
-- Workspace members：约 89 个（见根 `Cargo.toml` `[workspace].members`，`Cargo.toml:8-103`），分布在 `crates/codegen/`、`crates/common/`、`crates/build/`、`prod/mc/`、`third_party/`。
+- Workspace members：约 93 个（见根 `Cargo.toml` `[workspace].members`，`Cargo.toml:8-103`），分布在 `crates/codegen/`、`crates/common/`、`crates/build/`、`prod/mc/`、`third_party/`。
 - 核心生产 crate 集中在 `crates/codegen/`（`xai-grok-pager`、`xai-grok-shell`、`xai-grok-sampler`、`xai-chat-state`、`xai-grok-tools`、`xai-grok-workspace`）与 `crates/common/`（`xai-tool-runtime`、`xai-tool-types`、`xai-tool-protocol`）。
 - 组合根只有一个 `main.rs`：`crates/codegen/xai-grok-pager-bin/src/main.rs`，有意不放领域逻辑。
 - 工具链：`rust-toolchain.toml:11` 钉死 `1.94.0`。
