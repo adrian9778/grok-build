@@ -1,8 +1,8 @@
 # Grok Build 新手重构级源码指南（4 层规范版）
 
-> **范围**：本文档库是 Grok Build（终端 AI coding agent，二进制 `xai-grok-pager`，发行安装名 `grok`）的**重构级完整源码指南**。它按「先简单框架、再一条全路径小例子、再逐步拆解、最后补齐全部逻辑」四层推进，目标是让读者仅凭本库就能重新实现功能等价的系统。
+> **范围**：本文档库是 Grok Build（终端 AI coding agent，二进制 `xai-grok-pager-bin`，发行安装名 `grok`；TUI 主体在 `xai-grok-pager`）的**重构级完整源码指南**。它按「先简单框架、再一条全路径小例子、再逐步拆解、最后补齐全部逻辑」四层推进，目标是让读者仅凭本库就能重新实现功能等价的系统。
 > **工具版本**：Rust `1.94.0`（`rust-toolchain.toml:11`，组件 `rustfmt`/`clippy`）；`cargo` 随工具链；`ratatui = 0.29`、`tokio = full`、`agent-client-protocol = 0.10.4`（见根 `Cargo.toml` `[workspace.dependencies]`）。
-> **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。行号来自当前工作区快照，随版本变化；若你本地已有后续修改，**以当前源码为准**。每篇结论都给出 `crate/path:line` 源码索引，便于定位与复现。
+> **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。源码索引一律用 `crate/path · 符号(+函数内偏移)`（如 `xai-grok-shell/src/agent.rs 函数：SessionActor::handle_turn_input 偏移：+0`），绝对行号仅作快照、随版本变化；若你本地已有后续修改，**以当前源码为准**。
 
 ---
 
