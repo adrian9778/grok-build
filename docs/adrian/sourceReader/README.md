@@ -25,7 +25,7 @@
 | 第四层 | `12` | [认证网络遥测与更新](12-认证网络遥测与更新.md) | Auth、HTTP 客户端、重试、Telemetry、Crash、Update |
 | 第四层 | `13` | [持久化记忆与会话恢复](13-持久化记忆与会话恢复.md) | JSONL 持久化、崩溃恢复、fork/rewind、Memory |
 | 第四层 | `14` | [构建测试第三方与许可证](14-构建测试第三方与许可证.md) | 构建、测试矩阵、vendored、许可证 |
-| 第四层 | `15` | [跨模块完整运行链与场景](15-跨模块完整运行链与场景.md) | 8 个端到端场景（读文件、编辑+权限、bash+沙箱、取消、压缩、MCP…） |
+| 第四层 | `15` | [跨模块完整运行链与场景](15-跨模块完整运行链与场景.md) | 3 个深度端到端场景（完整编码任务 / 权限+沙箱 / 取消·崩溃·压缩恢复） |
 | 方法 | `16` | [术语表与源码查找手册](16-术语表与源码查找手册.md) | 术语消歧 + `rg`/`cargo` 查找配方 |
 | 实施 | — | [可靠性与通用技术实现说明书](可靠性与通用技术实现说明书.md) | 失败/重试/取消/背压/幂等/结果未知的统一语义 |
 
@@ -75,7 +75,7 @@ flowchart TD
 
 ## 源码规模（阅读时的心理预期）
 
-- Workspace members：约 93 个（见根 `Cargo.toml` `[workspace].members`，`Cargo.toml:8-103`），分布在 `crates/codegen/`、`crates/common/`、`crates/build/`、`prod/mc/`、`third_party/`。
+- Workspace members：**102 个**（见根 `Cargo.toml` `[workspace].members`，`Cargo.toml:8-111`），分布在 `crates/codegen/`（84）、`crates/common/`（12）、`crates/build/`（1）、`third_party/`（4）、`prod/mc/`（1）。新增成员 `crates/codegen/xai-grok-file-lock`（advisory file locks for grok-home）；新增 workspace 依赖 `tree-sitter = "0.26"`。
 - 核心生产 crate 集中在 `crates/codegen/`（`xai-grok-pager`、`xai-grok-shell`、`xai-grok-sampler`、`xai-chat-state`、`xai-grok-tools`、`xai-grok-workspace`）与 `crates/common/`（`xai-tool-runtime`、`xai-tool-types`、`xai-tool-protocol`）。
 - 组合根只有一个 `main.rs`：`crates/codegen/xai-grok-pager-bin/src/main.rs`，有意不放领域逻辑。
 - 工具链：`rust-toolchain.toml:11` 钉死 `1.94.0`。
