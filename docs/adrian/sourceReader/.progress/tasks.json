@@ -1,0 +1,51 @@
+[
+  {
+    "file": "README.md",
+    "tier": "index",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "更新 SOURCE_REV 84745de9→036a5d83、同步说明、workspace 规模数据"
+  },
+  {
+    "file": "00-阅读指南与文档地图.md",
+    "tier": "method",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "同步 SOURCE_REV、覆盖矩阵、规模数据（本轮无变化，已在 README.md 更新）"
+  },
+  {
+    "file": "09-Agent会话与模型循环.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "memory capture 捕获取消回合、enqueue_v2_turn_capture、is_capturable_front、record_turn_start、UsageTurn ack、cancel 路径捕获"
+  },
+  {
+    "file": "10-工具协议与扩展体系.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "GetTerminalCommandOutputTool params 重构、resolve_session_toolset_for_host+TruncationConfig、bundle entry/get 移除、hydrate_team_capability 新增"
+  },
+  {
+    "file": "12-认证网络遥测与更新.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "WinGet 检测与升级提示、hydrate_can_administer_team、AuthIdentity/AuthMeta、enrichment 日志卸载"
+  },
+  {
+    "file": "08-TUI交互循环与渲染.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "SignalStreams 抽取、HeadlessSignals、WidthShrink/reflow、forget_transmitted_inline_media、dashboard row 重构、subagent_catalog_pane 删除、minimal reprint"
+  },
+  {
+    "file": "11-Workspace权限沙箱与Git.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "resolve_session_toolset_for_host+host_kind+TruncationConfig、fast-worktree 重构"
+  }
+]

@@ -214,7 +214,7 @@ pub trait WorkspaceOp: WorkspaceRpc + DeserializeOwned + Send + Sync {   // 定�
 | `new(config)` | `+48` | 构造（测试与本地模式走无队列路径） |
 | `shared()` / `activity_tracker()` | `+250` / `+253` | 共享态与活动追踪 |
 | `hub_server` / `hub_server_blocking` | `+257` / `+263` | Hub 服务端句柄 |
-| `create_session` / `create_session_with_cwd` / `create_session_with_config` | `+270` / `+277` / `+287` | 会话创建三档 |
+| `create_session` / `create_session_with_cwd` / `create_session_with_config` | `+270` / `+277` / `+287` | 会话创建三档（均调 `resolve_session_toolset_for_host`，传入 `self.shared.host_kind`） |
 | `create_session_with_tracker` / `create_session_with_tracker_and_viewer_ctx` | `+324` / `+344` | 带 hunk tracker / viewer ctx（`bind_local_session` 用的就是后者） |
 | `canonical_root` / `resolve_service_path` | `+1241` / `+1254` | 路径规范化（`confine_*` 的底座） |
 | `on_before_turn` / `on_after_turn` / `compute_turn_injections` | `+786` / `+824` / `+875` | 回合边界钩子 |

@@ -73,8 +73,8 @@ UI 逻辑要可单测，就不能在「处理一次按键」时阻塞在 IO 上�
 | 类型 | 位置 | 角色 | 关键变体（节选，均逐字核对当前源码） |
 |---|---|---|---|
 | `pub enum Action` | `actions.rs` · `Action(+0)` | 同步 UI 意图（用户输入/事件） | `Quit`、`QuitForUpdate`、`QuitConfirmed`、`NewSession`、`SendPrompt(String)`、`RevisePlan(String)`、`SubmitFollowUp(String)`、`SendSlashCommandPreservingDraft(String)`、`Interject{text,images}`、`ExecutePlan{plan_file_content,plan_file_uri}`、`SendPromptNow{text,images,image_notice}`、`CancelTurn`、`TaskComplete(TaskResult)`、`RelaunchInScreenMode{minimal}` |
-| `pub enum Effect` | `actions.rs` · `Effect(+0)` | 异步副作用（被 spawn） | `SendPrompt{agent_id,session_id,text,prompt_id,skill_token_ranges}`、`SendPromptBlocks{..}`、`SendPromptNow{agent_id,session_id,blocks,prompt_id}`、`ExecutePlan{..}`、`SendBashCommand{..}`、`CancelTurn{session_id,cancel_subagents,trigger,rewind_prompt_id}`、`Compact{..}`、`KillBgTask`、`KillSubagent`、`ResetMouseReporting`、`QueueRemove{..}`、`QueueReorder{..}`、`RegisterActiveSession`/`UnregisterActiveSession` |
-| `pub enum TaskResult` | `actions.rs` · `TaskResult(+0)` | effect 完成回灌 | `WithPinnedMemoryMode{..}`、`SessionCreated{..}`、`StatusLineCommandFinished{..}`、`SendPromptNowFailed{..}`、`SessionRestoreProgress{agent_id,message}` |
+| `pub enum Effect` | `actions.rs` · `Effect(+0)` | 异步副作用（被 spawn） | `SendPrompt{agent_id,session_id,text,prompt_id,skill_token_ranges}`、`SendPromptBlocks{..}`、`SendPromptNow{agent_id,session_id,blocks,prompt_id}`、`ExecutePlan{..}`、`SendBashCommand{..}`、`CancelTurn{session_id,cancel_subagents,trigger,rewind_prompt_id}`、`Compact{..}`、`KillBgTask`、`KillSubagent`、`ResetMouseReporting`、`QueueRemove{..}`、`QueueReorder{..}`、`RegisterActiveSession`/`UnregisterActiveSession`、`HydrateTeamCapability{identity}`（新增） |
+| `pub enum TaskResult` | `actions.rs` · `TaskResult(+0)` | effect 完成回灌 | `WithPinnedMemoryMode{..}`、`SessionCreated{..}`、`StatusLineCommandFinished{..}`、`SendPromptNowFailed{..}`、`SessionRestoreProgress{agent_id,message}`、`TeamCapabilityHydrated{identity,can_administer_team}`（新增） |
 
 ```mermaid
 flowchart LR
@@ -90,6 +90,8 @@ flowchart LR
 > 经典主链路：`Action::SendPromptNow{text,..}` → `dispatch` 产出 `Effect::SendPromptNow{blocks,..}` → effect 经 ACP 把 prompt 发往会话 → `TaskResult`/ACP notification 回灌视图 → `presenter.request()` → 屏幕更新。
 >
 > 注意 `Effect::SendPrompt` 与 `Effect::SendPromptNow` 是**两个不同 effect**：前者是普通提交（`SendPrompt` 的字段是 `text: String` + `skill_token_ranges: Vec<Range<usize>>`），后者是「先取消在飞 turn，再把这段文本作为下一个 prompt turn」的 send-now 语义（`SendPromptNow` 携带 `blocks: Vec<acp::ContentBlock>`，源码注释「`session/prompt` stamped with `_meta.sendNow`」）。`TaskResult::SendPromptNowFailed` 是它专用的失败回执（见 `09` §9）。
+
+> **Dashboard 行变体移除**（当前 HEAD）：`Action::ViewCatalogEntry`、`Effect::FetchCatalogEntry`、`TaskResult::CatalogEntryReady`/`CatalogEntryFailed` 全部移除。`DashboardRowId`（`views/dashboard/state.rs:26`）从四变体缩减为三变体：`TopLevel(AgentId)`、`Roster{session_id}`、`Workspace{session_id}`——`Subagent{parent,child_session_id}` 变体已删除。`DashboardRow` 移除 `indent`/`parent_label`/`is_more_placeholder`/`more_count` 字段，`build_rows` 函数移除（替换为 `build_rows_with_roster`/`build_rows_with_workspace`），`MAX_VISIBLE_SUBAGENTS` 常量移除，`views/subagent_catalog_pane.rs`（513 行）整文件删除。`rearm_session_overlay` 不再选 Subagent 行，直接 `DashboardRowId::TopLevel(id)`。`Action::DashboardAttach` 文档从「switches to the parent agent and (for subagent rows) sets the parent's `active_subagent`」更新为「switches to that agent's view」。
 
 ---
 
@@ -318,6 +320,10 @@ AppView::draw(terminal)                                   app_view.rs  · draw(+
 
 **失败语义**：终端损坏时 `select!` 退出路径统一走 `run` 的返回（`RunResult` / `Err`），由 `07` 的 `shutdown_and_flush_telemetry` 收尾；部分重绘由 Ratatui 的 diff 能力处理，UI 逻辑里不手写。
 
+**Kitty 图像重传**（当前 HEAD 新增）：`AgentView::forget_transmitted_inline_media`（`agent_view/media.rs:372`）清空 `inline_media_ids`、`inline_media_iterm_emitted`、`last_placed_ids` 并递归 `subagent_views`。`event_loop.rs:630` 在 `force` clear（`terminal.clear()` + `overlay::reset_owner()`）后调用它——注释：「Ghostty drops image data on `ESC[2J`, and a place-only frame with `q=2` then fails silently and draws nothing.」。清空后下一帧重新 transmit（`a=t`）而非仅 place（`a=p`）。
+
+**终端 resize 与 reprint**（当前 HEAD 新增）：`xai-ratatui-inline/src/terminal.rs` 新增 `WidthShrink` 枚举（`:34`，`Truncates`（默认）/ `Rewraps`），决定宿主终端宽度缩小时已committed 行的处理方式。`reflowed_cursor_offset(new_width)`（`:1257`）在 Truncates 模式直接返回 `rows_above`，Rewraps 模式累加每行溢出宽度。minimal 模式新增 reprint 机制：`xai-grok-pager/src/minimal/reprint.rs`（`REPRINT_DEBOUNCE = 120ms`、`observe_minimal_layout`）+ `xai-grok-pager-minimal/src/reprint.rs`（`REPRINT_MAX_ROWS = 4000`、`maybe_reprint`）。resize 后等 debounce，minimal 清屏 + scrollback 重印最近 4000 行 committed entries——注释：「A reflowing terminal re-wraps printed rows and splits committed text mid-word.」
+
 ---
 
 ## 6. 流式渲染：markdown 与 Mermaid worker
@@ -346,6 +352,10 @@ AppView::draw(terminal)                                   app_view.rs  · draw(+
   5. `EnableFocusChange` + `EnableBracketedPaste` + `cursor::Hide`（`+46`）；
   6. 光标样式策略（`Inherit` / `ForceBlinking` / `ForceSteady`，`+50 ~ +64`）；
   7. `MOUSE_CAPTURE_ENABLED.store(!want_minimal)`（`+67`）、`set_current_screen_mode(mode)`（`+68`）、`set_panic_hook()`（`+69`）、`signal_handler::install(mode)`（`+70`）。
+
+  `signal_handler::install`（`app/signal_handler.rs`）内 `spawn_async_signal_task` 在当前 HEAD 使用抽取的 `SignalStreams`（`crate::signal_streams::SignalStreams`，`signal_streams.rs` 新文件）。unix 版 `SignalStreams`（`signal_streams.rs:4`）持有 `interrupt`/`terminate`/`hangup` 三个 `Option<tokio::signal::unix::Signal>`，`install()`（`:12`）从 `SignalKind` claim 三个信号流（错误只 warn），`next_code()`（`:28`）`select!` 返回 130(SIGINT)/143(SIGTERM)/129(SIGHUP)。windows 版持有 `ctrl_c: Option<tokio::signal::windows::CtrlC>`。注释：「The signals the 130/143/129 exit-code map covers, claimed from construction for as long as this lives: without a live stream a signal takes its default action and kills the process.」。`spawn_async_signal_task` 的逻辑不变：首信号请求 graceful quit，第二信号 `shutdown_with_terminal_restore` 强制退出。
+
+  **headless 信号**（`headless/signals.rs`，新文件 157 行）：`HeadlessSignals`（`:37`）在 `run_single_turn` 入口安装（`headless.rs:806`）。`defer_exit()` 返回 `DeferredExit`，其 `signalled()` 放在 `run_single_turn` 主 loop 的 biased `select!` **第一位**（注释：「First in the biased order so an ACP firehose cannot starve the signal」），`release()` 返回终止信号码。
   退出/切模式由 `app/mode_switch.rs` 用 `EnterAlternateScreen`/`LeaveAlternateScreen` + `Clear` 完成。
 - **Kitty keyboard**：`init_terminal` 先算跳过原因——`ctx.kitty_skip_reason()`，再叠加 `terminal::supports_keyboard_enhancement()`（`init_terminal(+79 ~ +85)`）；Alacritty 会保守地降级（`alacritty_conservative_version` 用 `ALACRITTY_BROKEN_EVENT_TYPES_MAX_PACKED`，`pager-render/src/terminal/kitty_keyboard.rs` 内常量）。`negotiated_kitty_flags(skip_reason, da2_packed)`（`kitty_keyboard.rs` · `+0`）返回最终 flag 集（`DISAMBIGUATE_ESCAPE_CODES` 必推，`REPORT_EVENT_TYPES` 仅在终端不误报 release 时推）；非空则 `PushKeyboardEnhancementFlags(flags)`（`init_terminal(+98)`），并用 `crate::terminal::set_pushed_kitty_flags(flags)`（`+109`）记下「真正推过什么」。挂起/恢复路径按记录原样重推（`app/mod.rs` 内两处 `set_pushed_kitty_flags` 调用），两者不会漂移。
 - **OSC 8 / OSC 52**：链接用 `pager-render/src/render/osc8.rs`；剪贴板经 OSC 52，`app/wrap_clipboard_image.rs` 与 `07` 的 `Wrap` 子命令共用。
@@ -439,8 +449,9 @@ pub(crate) async fn run(mut app: AppView, mut terminal: PagerTerminal) -> anyhow
 1. TUI 主循环 = 同步 `dispatch::dispatch(Action, &mut AppView) -> Vec<Effect>`（`dispatch/router.rs`，纯同步可单测，带 `dispatch_depth` 嵌套计数）+ 异步 `effects::execute` spawn 进 `JoinSet<TaskResult>`（`effects/mod.rs`），由 `event_loop.rs::run` 里**唯一一处**带 `biased` 的 `tokio::select!`（27 个臂）驱动。
 2. `Presenter` 层（`event_loop.rs` · `Presenter`）：`dispatch` 只打脏标记，真正 draw 由 `present_if_dirty` 在**写队列排空后**执行，并用 `WriterEvent` ack 关在飞闸门——这是背压与「屏幕冻结」诊断的落点。
 3. 视图状态归 `AppView`（`app/app_view.rs`）单写；**每 agent 的编排**归 `agent_view/`（38 条目），**共享 widget 渲染**归 `src/views/`（74 条目）——旧文档「views 被 agent_view 取代」的说法不成立，两者并存且分工不同。
-4. 终端本体是 `xai-ratatui-inline::Terminal<CrosstermBackend<TermWriter>>`（`PagerTerminal` 别名在 `pager-render/src/render/draw.rs`），不是裸 crossterm；alternate screen 只在 fullscreen 模式进（`init_terminal`），minimal 模式走 `xai-grok-pager-minimal` 的 draw hook。
+4. 终端本体是 `xai-ratatui-inline::Terminal<CrosstermBackend<TermWriter>>`（`PagerTerminal` 别名在 `pager-render/src/render/draw.rs`），不是裸 crossterm；alternate screen 只在 fullscreen 模式进（`init_terminal`），minimal 模式走 `xai-grok-pager-minimal` 的 draw hook。`WidthShrink` 枚举（`terminal.rs:34`）区分 Truncates/Rewraps 终端行为，`reflowed_cursor_offset` 据此调整光标偏移；minimal 模式 resize 后 debounce 120ms 重印最近 4000 行。
 5. 输入侧由独立读线程（`app/reader_thread.rs` 的 `ReaderThread`）经 `UnboundedSender<TimedInputEvent>` 送进主循环，`drain_and_process` 负责粘贴收全、按键合并与 CSI/X10/XTVERSION 三道过滤；输出侧由 `mermaid_worker` / `edit_highlight_worker` / `status_line` 作为 effect/定时器下游异步产出。
 6. 会话 RPC 统一走 `effects/helpers.rs::acp_send_bounded`（带 `session_rpc_timeout` 与 `SessionRpcError::TimedOut`）；`Effect::ResetMouseReporting` 是唯一不经 `execute`、由 `process_effects` 就地处理的 effect。
+7. **信号处理**（当前 HEAD 重构）：`SignalStreams`（`signal_streams.rs`）统一 unix/windows 信号流 claim，`HeadlessSignals`（`headless/signals.rs`）让 headless 模式在 biased select 第一位检查信号，不被 ACP 事件饥饿。**Dashboard** 移除 `Subagent` 行变体，`subagent_catalog_pane.rs` 整文件删除，`DashboardRowId` 缩减为三变体。**Kitty 图像**新增 `forget_transmitted_inline_media`（全屏 clear 后重传）。
 
 [上一篇：程序入口与运行模式](07-程序入口与运行模式.md) · [总目录](README.md) · [下一篇：Agent会话与模型循环](09-Agent会话与模型循环.md)

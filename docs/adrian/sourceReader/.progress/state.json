@@ -1,0 +1,12 @@
+{
+  "session_kind": "sync",
+  "base_commit": "cb8e30bd",
+  "target_commit": "0e2bfffb",
+  "source_rev_before": "84745de98b3d3996729aefcefd518890ffb73930",
+  "source_rev_after": "036a5d8348cd744767cd0b08518ab17bf608fa7f",
+  "current_file": "README.md",
+  "current_phase": "completed",
+  "last_completed_file": "11-Workspace权限沙箱与Git.md",
+  "completed": ["README.md", "09-Agent会话与模型循环.md", "10-工具协议与扩展体系.md", "12-认证网络遥测与更新.md", "08-TUI交互循环与渲染.md", "11-Workspace权限沙箱与Git.md"],
+  "sync_summary": "184 files changed (5462+/4762-). Major themes: (1) WinGet installer detection + upgrade hints in xai-grok-update; (2) team capability hydration (can_administer_team) in xai-grok-login/pager; (3) memory capture now captures cancelled turns (is_capturable_turn_result, enqueue_v2_turn_capture, is_capturable_front); (4) signal handling refactor (SignalStreams, HeadlessSignals); (5) dashboard row refactor removes Subagent row variant + subagent_catalog_pane deletion; (6) terminal resize WidthShrink + minimal reprint; (7) resolve_session_toolset_for_host + TruncationConfig; (8) GetTerminalCommandOutputTool params refactor; (9) bundle entry/get removed; (10) fast-worktree refactor."
+}
