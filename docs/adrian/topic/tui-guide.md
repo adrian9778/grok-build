@@ -32,37 +32,37 @@
 
 TUI 不是单个 crate，而是一条**从可执行外壳到自研渲染原语**的分层家族（均在 `crates/codegen/` 下）：
 
-| crate | 角色 | 规模（src 行数） |
-|---|---|---|
-| `xai-grok-pager-bin` | 进程外壳/组合根。CLI 解析、子命令分流、tokio runtime、IoC 装配 | 3,855 |
-| `xai-grok-pager` | **TUI 应用本体**：`app::run` 装配、事件循环、`AppView` 根状态机、各视图（`app/agent_view`、`views`、`scrollback`） | 536,256（含测试） |
-| `xai-grok-pager-render` | **表现原语层**：绘制入口与写线程、输入解析、换行、滚动条、语法高亮、主题、终端探测、overlay | 42,882 |
-| `xai-ratatui-textarea` | 自研多行输入控件（缓冲区 + 编辑命令 + 元素 + 撤销 + 渲染） | 13,333 |
-| `xai-ratatui-inline` | 自研「内联视口」终端（TUI 只占屏幕底部，上方是原生 scrollback） | 3,477 |
-| `xai-grok-pager-diff` | diff hunk 构造 | 1,445 |
-| `xai-grok-pager-minimal` | `--minimal` 滚动原生渲染模式（经函数指针缝注入，避免 cargo 循环依赖） | 7,230 |
-| `xai-grok-pager-pty-harness` | PTY 端到端测试夹具 | — |
+| crate                        | 角色                                                                                        | 规模（src 行数）   |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | ------------ |
+| `xai-grok-pager-bin`         | 进程外壳/组合根。CLI 解析、子命令分流、tokio runtime、IoC 装配                                                | 3,855        |
+| `xai-grok-pager`             | **TUI 应用本体**：`app::run` 装配、事件循环、`AppView` 根状态机、各视图（`app/agent_view`、`views`、`scrollback`） | 536,256（含测试） |
+| `xai-grok-pager-render`      | **表现原语层**：绘制入口与写线程、输入解析、换行、滚动条、语法高亮、主题、终端探测、overlay                                       | 42,882       |
+| `xai-ratatui-textarea`       | 自研多行输入控件（缓冲区 + 编辑命令 + 元素 + 撤销 + 渲染）                                                       | 13,333       |
+| `xai-ratatui-inline`         | 自研「内联视口」终端（TUI 只占屏幕底部，上方是原生 scrollback）                                                   | 3,477        |
+| `xai-grok-pager-diff`        | diff hunk 构造                                                                              | 1,445        |
+| `xai-grok-pager-minimal`     | `--minimal` 滚动原生渲染模式（经函数指针缝注入，避免 cargo 循环依赖）                                              | 7,230        |
+| `xai-grok-pager-pty-harness` | PTY 端到端测试夹具                                                                               | —            |
 
 关键设计：**`xai-grok-pager-bin` 之所以独立存在**，是因为 `xai-grok-pager-minimal` 依赖 `xai-grok-pager`，而 pager 库不能再反向依赖 minimal（cargo 循环）。于是由二进制 crate 同时链接两者，并在启动时安装 minimal 模式的 IoC 钩子。**发行产物名仍叫 `xai-grok-pager`**（`[[bin]] name = "xai-grok-pager"`）。
 
 ### 0.2 依赖与版本（工作区统一）
 
-| 依赖 | 版本 | 用途 |
-|---|---|---|
-| `ratatui` | **0.29**（features: `crossterm`, `unstable-widget-ref`, `unstable-backend-writer`） | 核心 TUI 框架 |
-| `ratatui-core` | 0.1 | 无 backend 的纯 widget 层 |
-| `crossterm` | **0.28**（`event-stream`, `bracketed-paste`） | 终端事件/后端 |
-| `tui-scrollbar` | 0.2 | 平滑 Unicode 滚动条 |
-| `textwrap` | 0.16 | 词感知换行 |
-| `unicode-width` / `unicode-segmentation` | 0.2 / — | 显示宽度与字素簇 |
-| `unicode-bidi` / `unicode-bidi-mirroring` | — | 双向文本（可选） |
-| `vte` | 0.15.0 | PTY 字节流 → 样式行的终端模拟 |
-| `syntect` | 5.3（default-onig） | 语法高亮 |
-| `anstyle` / `anstyle-parse` | 1.0 / 0.2 | markdown 样式桥 / 行切分 VTE |
-| `agent-client-protocol` | 0.10.4（unstable） | ACP（agent 通信协议） |
-| `tokio` | 1（full） | 异步运行时 |
-| `dark-light` | 2 | 系统深浅色探测 |
-| `xai-grok-cloud-config` | workspace（**新增**） | managed config / deployment key / 版本策略；原 `xai-grok-shell::managed_config` 已迁至此 crate |
+| 依赖                                        | 版本                                                                                | 用途                                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `ratatui`                                 | **0.29**（features: `crossterm`, `unstable-widget-ref`, `unstable-backend-writer`） | 核心 TUI 框架                                                                            |
+| `ratatui-core`                            | 0.1                                                                               | 无 backend 的纯 widget 层                                                                |
+| `crossterm`                               | **0.28**（`event-stream`, `bracketed-paste`）                                       | 终端事件/后端                                                                              |
+| `tui-scrollbar`                           | 0.2                                                                               | 平滑 Unicode 滚动条                                                                       |
+| `textwrap`                                | 0.16                                                                              | 词感知换行                                                                                |
+| `unicode-width` / `unicode-segmentation`  | 0.2 / —                                                                           | 显示宽度与字素簇                                                                             |
+| `unicode-bidi` / `unicode-bidi-mirroring` | —                                                                                 | 双向文本（可选）                                                                             |
+| `vte`                                     | 0.15.0                                                                            | PTY 字节流 → 样式行的终端模拟                                                                   |
+| `syntect`                                 | 5.3（default-onig）                                                                 | 语法高亮                                                                                 |
+| `anstyle` / `anstyle-parse`               | 1.0 / 0.2                                                                         | markdown 样式桥 / 行切分 VTE                                                               |
+| `agent-client-protocol`                   | 0.10.4（unstable）                                                                  | ACP（agent 通信协议）                                                                      |
+| `tokio`                                   | 1（full）                                                                           | 异步运行时                                                                                |
+| `dark-light`                              | 2                                                                                 | 系统深浅色探测                                                                              |
+| `xai-grok-cloud-config`                   | workspace（**新增**）                                                                 | managed config / deployment key / 版本策略；原 `xai-grok-shell::managed_config` 已迁至此 crate |
 
 > `xai-grok-pager-bin` 版本 `1.0.41 → 1.0.45`；新增 `stock` feature（`--no-default-features` 构建时显式开启上游 crate 默认特性）；`xai-grok-shell` / `xai-grok-update` 由 `workspace = true` 改为 `path` + `default-features = false`。
 
@@ -179,6 +179,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 `app` 模块门面 + **进程级启动编排**。`run()` 是「main 之后、主循环之前」的全部装配。
 
 核心类型：
+
 - `pub(crate) enum ScreenMode { Fullscreen, Inline, Minimal }`（约第 386 行）+ `to_u8`/`from_u8`（第 396/403 行，供无参 teardown 记录）+ `is_fullscreen`/`is_minimal`/`meta_label`（第 410/414/420 行）。
 - `pub(crate) struct ExitInfo { session_id, minimal, summary }` 与 `ExitSummary { title, last_prompt, last_response }`（第 466/476 行）— 退出后打印「Resume this session with…」所需。
 - `pub(crate) struct TerminalInit { terminal, screen_mode, startup_typeahead }`（第 1492 行）— `init_terminal` 返回，含「raw mode 后、事件循环前」捕获的 type-ahead 按键。
@@ -187,6 +188,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 - `pub(crate) mod voice_state;`（第 50 行，**新增**）— 语音（口述）状态机的新宿主模块（原在 `app_view.rs`，见 §1.6）；模块 re-export 新增 `CancelMeta`（第 58 行）。
 
 关键函数：
+
 - `pub async fn run(args: PagerArgs, bg_update_rx) -> anyhow::Result<bool>` — **TUI 总编排**：读配置 → 预取 remote settings（`EARLY_PREFETCH_WAIT`）→ `session_startup::materialize_startup` → 解析 screen mode → `spawn_writer_thread` → `init_terminal` → `apply_screen_mode_globals` → `bounded_connect`（leader 失败回退 embedded）→ 组 `TerminalState` → **`event_loop::run(...)`** → `restore_terminal` → 处理 `RunResult`。返回 `Ok(true)` 表示需为更新退出。约第 707 行；调用 `event_loop::run` 约第 1187 行。
 - `async fn bounded_connect(cancel, timeout, connect_ui_timeout_env, target, attempt, timer, connect) -> Result<AcpConnection, ConnectFailure>` — 有界连接：`tokio::select!`（biased）在 cancel / 连接完成 / 分片 sleep 间竞争；支持 launch-profile 升级后**延长预算**；超时把 phase snapshot 打包成 `StartupFailure`。约第 620 行。
 - `fn init_terminal(mode, minimal_live_rows, clear_main_screen, frame_tx, writer_sync, cursor_blink) -> io::Result<TerminalInit>` — **终端初始化核心**：`enable_raw_mode` → 清屏/`EnterAlternateScreen`（fullscreen）→ `EnableMouseCapture`/`EnableFocusChange`/`EnableBracketedPaste`/光标样式 → `set_panic_hook()` + `signal_handler::install(mode)` → kitty keyboard 协商 push → 多次 `capture_startup_typeahead` 抓 type-ahead → 按模式构造 `PagerTerminal`（inline/minimal 探测 `Viewport::Inline`，失败降级 `Viewport::Fixed`）。失败时 `.inspect_err` 跑 teardown 序列。约第 1503 行。
@@ -205,6 +207,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 **全系统最热的文件**：一个 `biased` `tokio::select!` 大循环，轮询终端输入、ACP 消息、后台任务完成、渲染定时器、信号、配置热重载。
 
 核心类型：
+
 - `pub(crate) struct TimedInputEvent { event: Event, arrived_at: Instant }`（约第 41 行）— 带到达时间戳的终端事件，用于卡顿测量。
 - `pub(crate) struct TerminalState { is_control_mode, screen_mode, relaunched_into_minimal, relaunched_into_fullscreen, initial_theme, startup_typeahead }`（第 214 行）。
 - `pub(crate) struct RunResult { exit_info, quit_for_update, trust_quit_error, relaunch }`（第 228 行）— 交给 `mod::run` 决定退出/更新/relaunch。
@@ -214,6 +217,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 - `struct RoutedInputEvent { event, arrived_at, paste_provenance, is_startup_replay }`（第 3154 行）。
 
 主循环与分发：
+
 - `pub(crate) async fn run(terminal, connection, pending_startup, tracing_handle, config_watcher, args, session_cwd, remote_settings, term_state, materialized, bg_update_rx, writer_event_rx, reader_thread) -> anyhow::Result<RunResult>` — **主入口**。构造 `AppView::new`、灌入 remote settings/CLI/auth 状态、`ReaderThread::spawn` 起 stdin 读线程、建 `JoinSet<TaskResult>` 任务集、`SessionLoadBarrier`、progress 通道；处理启动动作（`materialize` → `LoadSession`/`NewSession`/`NewWorktreeSession`/fork）、initial prompt、dashboard 启动钩子；然后进 `loop { ... tokio::select! { ... } }`，循环顶做 load-barrier drain、workspace sync、`run_pending_suspends`、`run_pending_mode_switch`、voice 冷启动、gboom 键盘层同步；循环尾 `present_if_dirty` + `schedule_tick`。循环顶另调 `app.voice_expire_outstanding_clip(Instant::now())`（约第 1974 行，**新增**，清理超时的语音剪辑）。约第 1034 行；主循环 `loop {` 约第 1868 行，`tokio::select!` 约第 2126 行。
 - `Presenter` 方法组（约第 516–652 行）：
   - `acknowledge(sequence) -> bool`（第 530 行）— writer 事件序号覆盖 in-flight target 时清门闩。
@@ -265,6 +269,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 **根组件 `AppView`**：持有全部会话、视图、输入、渲染、后台任务句柄；`handle_input` 做输入路由，`draw_inner` 做绘制，`tick` 做动画。
 
 核心类型：
+
 - `pub struct AppView { ... }`（第 499–1102 行，约 234 个 `pub` 字段）— 字段分组：
   - **会话/Agent**：`agents: IndexMap<AgentId, AgentView>`、`next_agent_id`、`active_view: ActiveView`、`auth_return_view`、`home_session_agent`/`optimistic_home_husk`、`active_agent()`/`home_session()`（第 1821/1828 行）。
   - **视图/overlay**：`dashboard`/`dashboard_return`/`dashboard_session_picker`、`tutorial`、`welcome_doc_viewer`、`import_claude_modal`、`new_worktree_dialog`、`session_picker_*`、`minimal_state`。
@@ -282,6 +287,7 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 - `pub struct PendingAction { action, shortcut, label, expires_at }`（第 396 行）+ `with_ttl`/`expired` — 双击确认（quit 等）。
 
 关键函数：
+
 - `pub fn new(acp_tx, models, bootstrap_acp_commands, escape_writer) -> AppView`（第 1341 行）— 构造根状态；初始化 registry、welcome prompt、settings registry、scratch/cursor。⚠️ 第三参数已由 `available_commands` 改名为 `bootstrap_acp_commands`。
 - `pub fn handle_input(&mut self, ev: &Event) -> InputOutcome`（第 2220 行）— 便捷入口，转调下面的方法（`Instant::now()` + `PasteProvenance::Terminal`）。
 - `pub(crate) fn handle_input_at_with_paste_provenance(&mut self, ev, arrived_at, paste_provenance) -> InputOutcome`（第 2223 行）— **输入路由入口**。顺序：`keyboard_normalizer.rescue` → Resize 记账（`note_terminal_resize` + `apply_effective_compact`）→ 双击 pending 匹配 → scroll 事件（`scroll_state.on_scroll_event_at` → `dispatch_scroll`）→ tutorial 拦截 → 按 `active_view` 分派：`Welcome` → `handle_welcome_input(...)`；`Agent(id)` → dashboard-overlay 键处理 + `AgentView` 输入 + modal → 最后对 quit/exit-session/new-session 做确认包装 → 未消费则 `handle_unconsumed_input`。
@@ -471,7 +477,7 @@ break → flush_pending_stall()(:3096) → finish_run_with_stall_flush()(:3101) 
 - `enum ScrollInputMode { Auto, Wheel, Trackpad }`（约第 25 行）。
 - 常量簇：`STREAM_GAP_MS=80`、`REDRAW_CADENCE_MS=16`、加速阈值与倍数、`MIN_DELTA_PER_FLUSH=6`（约第 47–77 行）。
 - `is_vscode_embed(name)` / `default_accel_interval_{fast,medium}_ms_for_terminal` / `default_trackpad_detect_max_interval_ms_for_terminal`（约第 82–124 行）— xterm.js 嵌入（VS Code 家族）用更宽时间窗与更高 lpt。
-- `speed_to_multiplier(speed: u8) -> f32`（约第 107 行）— 1~100 速度 → 0.1x~6.0x（50 为 1.0x）。
+- `speed_to_multiplier(speed: u8) -> f32`（约第 107 行）— 1–100 速度 → 0.1x–6.0x（50 为 1.0x）。
 - `enum ScrollStreamKind { Unknown, Wheel, Trackpad }`（约第 127 行）、`enum ScrollDirection { Up, Down }`。
 - `ScrollDirection::from_mouse_event(event: &MouseEvent) -> Option<Self>`（约第 152 行）— **鼠标事件解析入口**：`ScrollUp/ScrollDown` → `Up/Down`。被 `AppView::handle_input` 调用。
 - `struct ScrollConfig { ept, wheel/trackpad lpt, 模式, 时间窗, 加速阈值, speed 乘子, viewport_height }`（约第 178 行）。
@@ -493,11 +499,13 @@ break → flush_pending_stall()(:3096) → finish_run_with_stall_flush()(:3101) 
 ### 2.6 `input/macos_modifiers.rs` 与 `input/terminal_support.rs`
 
 **macos_modifiers.rs** — macOS 物理修饰键探测，直接读 CoreGraphics，不经 PTY：
+
 - `CGEventSourceFlagsState(stateID) -> u64`（extern "C"，约第 8 行）— 链接 CoreGraphics 的全局修饰键标志读取，无需特殊权限。
 - `flags() -> u64`（约第 19 行）— 以 `kCGEventSourceStateHIDSystemState` 调用上式。
 - `snapshot() -> ModifierState`（约第 27 行）— 一次系统调用解出全部修饰位。
 
 **terminal_support.rs** — 针对「修饰键+Enter 换行」的 OS 级救援：
+
 - `OS_MODIFIER_RESCUE_SUPPRESSED`（thread_local `Cell<bool>`，约第 11 行）+ `struct OsModifierRescueGuard` + `Drop`（约第 15–21 行）+ `suppress_os_modifier_rescue()`（约第 24 行）+ `os_modifier_rescue_suppressed()`（约第 29 行）。
 - `is_apple_terminal_newline_modifier_held() -> bool`（约第 34 行）— 抑制中或 `enter_needs_rescue()` 为假则 false，否则查 OS 是否按住 Shift/Opt/Cmd。
 - `is_mod_enter(key) -> bool`（约第 47 行）— 仅 `Enter` 且（`ALT|SHIFT` 命中 或 Apple Terminal 救援成立）；刻意排除 `SUPER`（多为全屏）。
@@ -532,17 +540,20 @@ break → flush_pending_stall()(:3096) → finish_run_with_stall_flush()(:3101) 
 ### 2.9 `terminal/keyboard.rs` / `kitty_keyboard.rs` / `probe.rs` / `da2.rs` / `xtversion.rs`
 
 **keyboard.rs** — 把「某品牌在宿主 OS 上如何投递 Cmd/Opt/Enter」编成一张能力表：
+
 - `enum ModifierFate { Native, Dropped, Unrecoverable, Unknown }` + `benefits_from_rescue()`（约第 13/27 行）— 仅 `Dropped` 可从 OS 救援。
 - `struct ModifierDelivery { cmd, opt }` + `benefits_from_rescue()`/`label()`（约第 35/47/51 行）。
 - `struct KeyboardCapabilities { modifier_delivery, enter_modifier }` + `enter_needs_rescue()`（约第 58/66 行）— 输入代码读的单一能力结构。
 - `keyboard_capabilities(brand)`（约第 73 行）→ `keyboard_capabilities_for_host(brand, host)`（约第 78 行，仅 macOS 有表）→ `macos_capabilities(brand)`（约第 85 行）— **品牌分类表**：Ghostty/Kitty/Foot/iTerm2/VS Code 家族全 `Native`；WezTerm `cmd=Dropped`；Alacritty/Rio `opt=Dropped`；Warp 两者 `Dropped`；AppleTerminal `cmd=Unrecoverable, opt/enter=Dropped`；其余 `Unknown`。
 
 **kitty_keyboard.rs** — Kitty 键盘增强标志协商与「已推送集」进程级记录（区分「推送了标志」与「真收到 release」）：
+
 - `ALACRITTY_BROKEN_EVENT_TYPES_MAX_PACKED: u32 = 2401`（约第 32 行）— 会重复发送旧式 release 的 `alacritty_terminal` 最高版本。
 - `negotiated_kitty_flags(skip_reason, da2_packed) -> KeyboardEnhancementFlags`（约第 36 行）— **协商核心**：有 `skip_reason` 则推空集；否则至少推 `DISAMBIGUATE_ESCAPE_CODES`，仅当 DA2 版本不是已知破损版才加 `REPORT_EVENT_TYPES`。
 - `PUSHED_KITTY_FLAGS: AtomicU8`（约第 54 行）+ `pushed_kitty_flags()`/`set_pushed_kitty_flags(flags)`（约第 57/61 行）、`kitty_flags_pushed()`（约第 67 行）、`kitty_releases_reported()`（约第 74 行，hold-to-talk 等必须门控）、`kitty_event_types_withheld()`（约第 80 行）、`take_kitty_flags_pushed()`（约第 86 行，读清合一防并发 teardown 双重 pop）。
 
 **probe.rs** — 探测原语：写查询 + 在裸 fd 上按截止时间轮询读 stdin：
+
 - 常量 `MAX_PROBE_RESPONSE=256`、`LATE_REPLY_GRACE=100ms`、`LATE_REPLY_QUIET_MS=25`（约第 13–21 行）。
 - `write_query(query) -> bool`（约第 24 行）— 经共享 stderr 锁写查询。`write_query_until(query, deadline)`（约第 41 行）、`write_all_until(fd, buf, deadline)`（约第 54 行）。
 - `struct NonblockingGuard` + `set`/`Drop`（约第 106–143 行）— 临时置 `O_NONBLOCK` 并在 drop 时恢复。
@@ -552,12 +563,14 @@ break → flush_pending_stall()(:3096) → finish_run_with_stall_flush()(:3101) 
 - `enum PollRead` + `poll_read_byte(fd, timeout_ms) -> PollRead`（约第 338 行）+ `last_errno_is_eintr()`（约第 381 行）。
 
 **da2.rs** — 运行期 DA2（Secondary DA）探测，专为 Alacritty（无版本环境变量、拒绝 XTVERSION）：
+
 - `DA2_VERSION: OnceLock<Option<Da2Version>>`（约第 19 行）、`struct Da2Version { packed, text }`（约第 24 行）、`detected()`/`detected_packed()`（约第 41/46 行）。
 - `probe_at_startup()`（约第 51 行）— 门控 + stdin 是否 TTY，然后 `query_and_read`；**必须在 `enable_raw_mode()` 后、`EventStream` 前**运行。
 - `gate_allows_probe(ctx) -> bool`（约第 68 行）— 仅 Alacritty 且复用器不拦截 CSI 才探测。
 - `query_and_read()`（约第 73 行）、`parse_version(reply) -> Option<Da2Version>`（约第 105 行，从最后一个 `>` 起解析，抗 typeahead 干扰）、`unpack_version(packed)`（约第 122 行）。
 
 **xtversion.rs** — XTVERSION 探测（发后不管），回复由事件循环过滤器识别并吞掉：
+
 - `enum ProbeResult { Skipped, NoReply, Identified }`（约第 18 行）、`XTVERSION: OnceLock<ProbeResult>`、`QUERY_SENT: AtomicBool`。
 - `detected()`（约第 36 行）、`reply_pending()`（约第 44 行，事件循环据此武装过滤器）、`record_reply(payload)`（约第 49 行）、`record_no_reply()`（约第 57 行）、`probe_at_startup()`（约第 67 行）。
 - `gate_allows_probe(ctx)`（约第 83 行）— 允许 `Unknown|Kitty|WezTerm|Ghostty|Iterm2|Rio` 且复用器不拦截 CSI；**必须与 `da2` 探测集不相交**。
@@ -621,6 +634,7 @@ ScrollDirection::from_mouse_event()
 **draw.rs** — **一帧渲染的真正入口**。绕过 ratatui `Terminal::draw()/try_draw()`，用底层 API 手写「diff → 光标去重 → 原子提交」，解决光标闪烁被每帧 `Show/MoveTo/Hide` 打断的问题；并引入独立写线程，避免慢终端阻塞事件循环。
 
 写线程与同步协议：
+
 - `type PagerTerminal = xai_ratatui_inline::Terminal<CrosstermBackend<TermWriter>>`（约第 53 行）。
 - `enum WriterEvent { Written(u64), Failed(io::Error) }`、`enum WriterDrain { Drained, TimedOut }`、`enum WriterJoin { Joined, TimedOut }`。
 - `struct WriterSync { queued, written, failed, writer_active, producer, event_tx }` — 帧与转义共用的**序号水位线**协议；`reserve_sequence` 先占号再发送，保证子进程接管 tty 前无乱序帧。方法：`reserve_sequence() -> u64`、`mark_written(seq)`（`fetch_max` 保持单调）、`mark_failed(err)`（CAS 只报一次）、`is_drained()`、`wait_drained(timeout) -> io::Result<WriterDrain>`。约第 103–149 行。
@@ -632,6 +646,7 @@ ScrollDirection::from_mouse_event()
 - `spawn_writer_thread() -> io::Result<WriterThreadParts>` / `spawn_writer_thread_with(spawn)`（约第 375/379 行）— 起名为 `term-writer` 的线程，dup tui stderr 包 `BufWriter`，循环 `rx.recv()` 逐块 `write_payload`。`write_payload(writer, payload, sync)`（约第 343 行）。
 
 光标去重与帧绘制：
+
 - `struct CursorState { last_pos: Option<(u16,u16)> }`、`enum CursorAction { None, Reposition(x,y), Show(x,y), Hide }`。
 - `CursorState::action(cursor_pos, has_changes) -> CursorAction`（约第 464 行）— 纯函数：位置相同且无变化→`None`（保留闪烁）；位置相同但有变化→`Reposition`；可见性跃迁→`Show`/`Hide`。
 - `CursorState::apply(action, w)`（约第 480 行）— 用 `queue!`（非 `execute!`）把光标命令与帧批量刷出。
@@ -698,9 +713,11 @@ ScrollDirection::from_mouse_event()
 ### 3.7 `render/renderable.rs` 与 `render/safe_buf.rs`
 
 **renderable.rs** — 虚拟化滚动的核心抽象：
+
 - `trait Renderable { fn render(&self, area, buf); fn desired_height(&self, width) -> u16 }`（约第 10 行）— 对象安全，允许异构集合；高度需高效（滚动位置计算会频繁调用）。标准实现：`()`、`&str`/`String`/`Span`/`Line`、`Option<R>`、`Arc<R>`、`Box<R>`（约第 23–102 行）。
 
 **safe_buf.rs** — ratatui `Buffer` 的越界安全写入扩展；resize 竞态下区域可能短暂越界，原生 `set_line/set_span/set_string` 会 panic：
+
 - `trait SafeBuf` + `set_line_safe(x,y,line,width)` / `set_line_safe_bidi(...)` / `set_span_safe(...)` / `set_string_safe(...)` — 先做边界检查再写。
 - `set_line_safe_bidi`（约第 39 行）— 唯一做 RTL 重排的版本：开启 bidi 时经 `bidi::visual_line` 重排后再写；scrollback/list 内容用它（它们掌握列映射），普通 chrome 用 `set_line_safe` 保持逻辑序以便命中测试。
 
@@ -751,18 +768,22 @@ Read/Edit 工具路径解析与按「表面」（Collapsed/Expanded/Fullscreen�
 ### 3.12 overlay 家族
 
 **`render/image_overlay.rs`**（模块根，**非** `mod.rs`）— 图片预览浮层：
+
 - `render_image_overlay(buf, area, image, bg, text_fg, border_fg) -> Option<overlay::Escapes>`（约第 43 行）— 对外入口。
 - `render_image_overlay_inner(...) -> Option<ImageOverlayRender>`（约第 55 行）— **核心**：区域太小直接 None；`plan_image_preview` + `overlay_geometry` 算几何；`dim_area` 压暗背景；`Clear` + 圆角 `Block` 画框；标题居中；预留 path footer；无像素时用 `Paragraph` 列 Format/Dimensions/Size，有像素时居中 `Loading...` 并生成 `overlay::static_image_for_protocol` 后刷转义。
 - `content.rs`：`paint_path_line(...)`（约第 11 行）、`build_meta_line(image, display_path)`（约第 34 行）、`format_mime(mime)`（约第 49 行）、`truncate_path_for_overlay(path, max_chars)`（约第 61 行）。
 - `geometry.rs`：常量 `MIN_BOX_WIDTH=28` 等；`plan_image_preview(image, protocol) -> ImagePreviewPlan`（约第 36 行）、`overlay_geometry(area, show_pixels, has_path, dimensions) -> Option<ImageOverlayGeometry>`（约第 46 行）。
 
 **`render/video_overlay.rs`** — 视频浮层的边框/标题/进度条 chrome（视频帧由调用方以 post-flush 转义渲染）：
+
 - `render_video_overlay(buf, area, viewer, bg, text_fg, border_fg) -> Option<Rect>`（约第 16 行）、`render_progress_bar(buf, popup_rect, viewer, text_fg, bar_dim, bg)`（约第 77 行）、`format_time(secs) -> String`（约第 124 行）。
 
 **`render/gboom_overlay.rs`** — `/gboom` 彩蛋浮层 chrome：
+
 - `render_gboom_overlay(buf, area, hud, bg, text_fg, border_fg) -> Option<Rect>`（约第 17 行）、`render_hud_bar(buf, popup_rect, hud, dim_fg, bg)`（约第 70 行，左 `HP/·/KILLS` 按血量绿/琥珀/红）。
 
 **`render/preview_overlay.rs`** — 多行内容预览浮层（粘贴元素预览、队列项预览）：
+
 - `struct PreviewStyle`、`struct PreviewConfig { preview_lines, width_ratio, bottom_gap, min_width, min_height, hint }`（约第 46–82 行，默认 3/0.75/0/20/5/None）。
 - `render_preview_overlay(buf, area, content, style, config) -> Option<Rect>`（约第 90 行）— **主函数**：空内容或区域过小→None；算 `needs_dots` 与内容行数；框高=内容+2、宽=`area*width_ratio`；**底部锚定**；`Clear`+`set_style`+圆角 `Block`。
 - `render_content_lines(...)`（约第 165 行，有省略时画 top N、`⋮ (N more lines)`、bottom N）、`render_line(...)`（约第 222 行）、`render_border_hint(...)`（约第 230 行）。
@@ -770,12 +791,14 @@ Read/Edit 工具路径解析与按「表面」（Collapsed/Expanded/Fullscreen�
 ### 3.13 `host/mod.rs` 与 `host/display_refresh.rs`
 
 **host/mod.rs** — 宿主平台与显示服务器的**分类**（不是逐帧渲染入口）：
+
 - `collect_unicode_env() -> HashMap<String,String>`（约第 12 行）、`unicode_env_from_os(iter)`（约第 17 行）。
 - `enum HostOs { Macos, Linux, Windows, Other }` + `HostOs::current()`（约第 28/38 行）。
 - `pub use xai_tty_utils::is_wsl;`（约第 54 行）。
 - `enum DisplayServer { Quartz, Wayland, X11, Win32, Unknown }` + `current()`（约第 70 行，`OnceLock` 缓存）+ `detect_from_env(env)`（约第 79 行）。
 
 **host/display_refresh.rs** — 一次性探测主显示器刷新率（Hz），用于帧率上限/动画节奏；**fail-closed**：
+
 - `enum DisplayRefreshSource { None, MacosCoreGraphics, WindowsEnumDisplaySettings, Linux }`（约第 15 行）、`struct DisplayRefreshProbeResult { hz, source, skip_reason, duration_ms }` + `outcome()`（约第 23/33 行）。
 - `probe_display_refresh() -> DisplayRefreshProbeResult`（约第 45 行，`OnceLock`）→ `probe_uncached()`（约第 50 行）→ `probe_inner()`（约第 61 行）→ `decide(is_ssh, is_wsl, os, display, platform_hz)`（约第 82 行，纯决策矩阵）。
 - `precheck_skip(is_ssh, is_wsl)`（约第 115 行，SSH/WSL 直接跳过）、`linux_skip_reason(display)`（约第 125 行）、`accept_hz(hz, source)`（约第 133 行，30..=500）、`probe_macos()`/`macos_main_display_refresh_hz()`（约第 144/161 行，CoreGraphics FFI，`0.0`→`"indeterminate"`）、`probe_windows()`/`windows_primary_display_refresh_hz()`（约第 193/211 行）。
@@ -783,12 +806,14 @@ Read/Edit 工具路径解析与按「表面」（Collapsed/Expanded/Fullscreen�
 ### 3.14 `glyphs.rs` 与 `syntax.rs`
 
 **glyphs.rs** — **legacy Windows ConHost** 的字符回退（Consolas/Lucida Console 缺 glyph 会渲染成 tofu）；每个函数按 `is_legacy_windows_console()` 在 fancy 与 ASCII/CP437 回退间选择，且所有变体保持相同列宽：
+
 - `prompt_arrow() -> &'static str` + `PROMPT_ARROW_WIDTH=2`（约第 16/25 行）。
 - `record_dot`/`collapsed_accent`/`ballot_x`/`check_mark`/`enlarge`/`copy_icon`/`token_arrow`/`diamond_filled/hollow/dotted`/`accent_bar`/`timeline_chevron_up/down`/`heavy_horizontal`/`light_horizontal`/`timeline_tick_active/hover`/`filled_dot`/`selection_bar`/`chevron()/chevron_left()/chevron_down()`/`disclosure_open/closed/up` 等（约第 28–334 行）。
 - `monitor_icon_frames()`/`braille_spinner_frames()`/`dot_spinner_frames() -> &'static [&'static str]`（约第 100/148/162 行）。
 - `legacy_glyph_fallback(s) -> Cow<str>`/`to_legacy_glyphs(s) -> String`（约第 337/364 行，`✓→√`、`✗→x`、`⚠→!`）、`sanitize_toast_message(msg)`（约第 349 行）、`is_legacy_windows_console() -> bool`（约第 377 行）、`decide_legacy_windows_console(host, brand) -> bool`（约第 406 行，Windows 且 brand 未知时**默认视为 legacy**）。
 
 **syntax.rs** — 语法高亮的**主题/颜色映射层**（真正的 syntect 解析在 `xai-grok-markdown::Syntect`）：
+
 - `static SYNTECT_GROKNIGHT / SYNTECT_TOKYONIGHT / SYNTECT_GROKDAY: OnceLock<Syntect>`（约第 22–24 行）。
 - `syntect_to_ratatui_fg(style) -> Style`（约第 27 行）、`syntect_rgb_to_fg(r,g,b) -> Color`（约第 46 行）、`polarity_safe_syntax_fg(r,g,b) -> Color`（约第 56 行，低彩度→`Reset`；否则按 HSV 色相分桶到基础 16 色，绝不产生 White/Black）。
 - `highlight_line(text, highlighter, syntect, fallback) -> Vec<Span>`（约第 90 行）、`get_syntect() -> &'static Syntect`（约第 119 行）。
@@ -858,6 +883,7 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 ### 4.2 具体主题文件
 
 `tokyonight.rs`（`Theme` 结构体**唯一字段定义处** + 主题无关辅助）：
+
 - `pub mod palette`（约第 15 行）— TokyoNight Night/Storm 常量，命名规律「角色名 + 可选数字后缀」（`BLUE0`/`BLUE1`、`GREEN1`）。
 - `struct Theme { ... }`（约第 46 行）— 约 60 个 `Color` 字段 + 6 个 `md_heading_*_mod: Modifier`；分背景/强调/文本/灰阶/语义/选中框/滚动条/diff/paste/markdown 十组。
 - `Theme::tokyonight() -> Self`（约第 148 行，Storm 变体）、`Theme::fg(color)`/`muted()`/`muted_over_chrome()`/`link_style()`/`dim()`/`primary()`/`bold()`（约第 234–341 行，`muted`/`dim` 在 `gray`/`gray_dim` 为 `Reset` 时改挂 `Modifier::DIM`）、`Theme::faint(&self) -> Style`（约第 275 行，`gray_dim` 向 `bg_base` 混合 0.66）。
@@ -865,11 +891,13 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 - `wave_brightness(tick, row, wave_rows, speed) -> f32` / `pulse_brightness(tick, speed) -> f32`（约第 345/359 行，`sin²` 0–1 亮度振荡，供强调线动画）。
 
 `groknight.rs`/`grokday.rs`/`rosepine.rs`/`oscura.rs` — 四个具体主题，各定义私有 `palette` 常量模块并实现一个 `const fn` 构造函数，结构完全同构：
+
 - `Theme::groknight() -> Self`（groknight.rs 第 55 行）— 默认主题：中性灰底（`BG_STORM=#141414`）配 TokyoNight Night 强调色。
 - `Theme::grokday() -> Self`（grokday.rs 第 53 行）— GrokNight 的浅色对偶（`BG_STORM=#eeeeee`）。
 - `Theme::rosepine_moon() -> Self`（rosepine.rs 第 32 行）、`Theme::oscura_midnight() -> Self`（oscura.rs 第 51 行）。
 
 `terminal_default.rs` — 终端原生（minimal 模式 / `terminal` 主题）调色板：每个字段都是 `Reset` 或命名 ANSI-16：
+
 - `Theme::terminal_default() -> Self`（约第 28 行）— 全 `Reset` 背景 + 稀疏命名 ANSI 强调；正文/次级文字用 `Reset`（靠 `muted`/`dim` 加 SGR dim，绝不硬涂 `DarkGray`）。
 - `Theme::terminal() -> Self`（约第 115 行）— 在 `terminal_default` 基础上把边框/滚动条/`gray_dim` 改成 `DarkGray`。
 
@@ -898,15 +926,18 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 ### 4.5 `theme/env_appearance.rs` / `system_appearance.rs` / `osc11.rs`
 
 **env_appearance.rs** — 桌面 API 不可用时的环境变量深浅色提示（SSH 友好）：
+
 - `detect() -> Option<SystemAppearance>`（约第 16 行）→ `detect_from_env_map(env)`（约第 22 行，有序：显式戳 `GROK_APPEARANCE`→`LC_GROK_APPEARANCE` → `COLORFGBG`）。
 - `detect_explicit_from_env_map(env)`（约第 28 行，仅显式戳）、`detect_colorfgbg_from_env_map(env)`（约第 35 行）、`parse_appearance_var(raw)`（约第 47 行，`dark`/`light` + `night`/`day` 别名）、`parse_colorfgbg(raw)`（约第 58 行，取最后一段作 bg；`0–6|8`=Dark，`7|9–15`=Light）。
 
 **system_appearance.rs** — 系统深浅色探测链与后台轮询 watcher：
+
 - `enum SystemAppearance { Light, Dark }`/`as_env_value(self)`（约第 23/31 行）、`static OSC11_STARTUP: OnceLock<Option<SystemAppearance>>`（约第 20 行）。
 - `detect() -> Option<SystemAppearance>`（约第 41 行，桌面 → 显式 env → 缓存 OSC 11 → `COLORFGBG`，不再发 OSC 11）、`detect_with_osc11_fallback()`（约第 53 行，启动专用，实发 OSC 11 并写 `OSC11_STARTUP`）、`resolve_appearance_chain(desktop, explicit, osc11, colorfgbg)`（约第 72 行，`desktop.or(explicit).or(osc11).or(colorfgbg)`）、`detect_desktop()`（约第 83 行，`dark_light::detect()`）、`to_theme_kind(appearance, dark_theme, light_theme) -> ThemeKind`（约第 110 行）。
 - `struct SystemAppearanceWatcher` + `start_if_auto(is_auto) -> Option<Self>`（约第 129/136 行，`watch` channel + `tokio::spawn` 轮询 `detect()`）+ `changed()`/`current()`（约第 163/168 行）。
 
 **osc11.rs** — OSC 11 终端背景色查询（**仅启动期**，crossterm `EventStream` 活跃后禁止调用）：
+
 - 常量 `LUMINANCE_THRESHOLD=0.5`、`OSC11_TIMEOUT=500ms`、`OSC11_WRAP_TIMEOUT=80ms`、`OSC11_QUERY=b"\x1b]11;?\x07"`（约第 23–30 行）。
 - `detect_via_osc11() -> Option<SystemAppearance>`（约第 34 行，先发裸查询，失败再按 `should_wrap_osc11` 走 tmux passthrough 短超时重试）、`query_osc11(query, timeout)`（约第 55 行）、`classify_luminance(r,g,b) -> SystemAppearance`（约第 65 行，BT.709 + sRGB gamma 逆；被 `Theme::is_dark` 复用）、`parse_osc11_rgb(response)`（约第 77 行）、`parse_channel(s)`（约第 92 行）、`srgb_to_linear(c)`（约第 103 行）。
 - `struct TermiosGuard` + `Drop`/`make_raw_termios(snapshot)`（约第 115/134 行，仅 Unix，drop 时恢复原 termios，**不碰 crossterm 的进程级原始模式**）、`read_osc_response_with_fd(fd, timeout)`/`unix_read_with_timeout(timeout)`/`ends_with_osc_terminator(buf)`（约第 155/179/192 行）。
@@ -914,6 +945,7 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 ### 4.6 `theme/md_style.rs`
 
 把当前 `Theme` 的 `md_*` 字段桥接为 `xai_grok_markdown::MarkdownStyle`（anstyle 类型）：
+
 - `to_anstyle(c: ratatui::Color) -> Option<anstyle::Color>`（约第 8 行，`Reset`→`None`；命名色按 `Gray`/`DarkGray` 映射到 `White`/`BrightBlack`）、`fg(c)`/`bg(c)`/`modifier_to_anstyle(m)`（约第 34–64 行）。
 - `heading_inner_styles(colors, mods) -> [Style;6]`/`heading_outer_styles(colors) -> [Style;6]`（约第 66/90 行）。
 - `style()`/`build_style() -> MarkdownStyle`（约第 96/100 行，每次调用从 `Theme::current()` 重建整套 markdown 样式；`blockquote_outer` 与 `quote_bar.rs::quote_bar_style` 逐字段对齐）。
@@ -921,10 +953,12 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 ### 4.7 `appearance/mod.rs` / `config.rs` / `cache.rs`
 
 **mod.rs**（59 行）— 门面与两个「全局原子」：
+
 - 重导出 `AppearanceConfig`/`RawAppearanceConfig`/`ScrollMode`/`TextSelection`/`FollowUpBehavior`/`RenderMermaid`/`ConfigWatcher`（第 21–31 行）。
 - `static TAB_WIDTH: AtomicU8`（第 38 行）+ `tab_width()`（第 41 行）/`set_tab_width(w)`（第 46 行）、`expand_tabs(text) -> Cow<str>`（第 53 行，按 tab 宽度替换为空格，因为 ratatui 会丢弃含控制字符的 cluster）。
 
 **config.rs**（2358 行）— `pager.toml` 的 serde 形态（`Raw*`）与运行时形态（`AppearanceConfig`）及转换、颜色解析、TOML 模板生成与持久化：
+
 - `enum BlockBackground { None, Light, Dark }`（第 12 行）、`struct AppearanceConfig { animation, prompt, scrollback, turn_status, show_timestamps, show_timeline, disable_plugins, show_plan_chip, alt_screen, minimal, minimal_live_rows, minimal_max_commit_rows, minimal_collapse_thinking }`（第 20 行）。
 - 子配置：`PromptViewConfig`/`ScrollbackConfig`/`ScrollbackDisplayConfig`/`LayoutConfig`/`ScrollbarConfig`/`ScrollConfig`/`AnimationConfig`/`BlocksConfig`/`EditBlockConfig`/`ThinkingConfig`/`ToolConfig`/`PromptConfig`（约第 60–460 行）。
 - `LayoutConfig::eff_outer_vpad(compact)`（第 194 行，另有 `eff_hpad_left/right`/`validated()`）、`ScrollbarConfig::total_width()`/`is_outside(outer_hpad_right)`（第 258/267 行）、`ScrollConfig::min_scroll_lines(viewport_height)`（第 319 行）、`AnimationConfig::tick_interval() -> Duration`（第 354 行，`1000/fps`）、`EditBlockConfig::effective_expanded(...)`/`effective_line_summary(...)`（第 413/419 行）。
@@ -935,6 +969,7 @@ preview_overlay::render_preview_overlay → render_content_lines / render_border
 - `RawAppearanceConfig::to_toml_with_comments() -> String`（第 1631 行）、`persist_respect_manual_folds(enabled)`（第 1776 行，`PAGER_TOML_SAVE_LOCK` + `fs_atomic`）、**🆕 `persist_respect_manual_folds_to(path, enabled)`**（第 1794 行 — 本次漂移抽出的可测写入核心，`persist_respect_manual_folds` 现为其薄包装）、`upsert_respect_manual_folds(content, enabled)`（第 1813 行）、`annotate_table<T: DocumentedFields>(table)`（第 1837 行）。
 
 **cache.rs**（1189 行）— UI 布尔/枚举设置的 thread-local 读缓存（渲染热路径），磁盘写由 shell 的 `set_<field>()` 负责：
+
 - 默认常量族 `COMPACT_DEFAULT`…`SCROLL_LINES_MAX`（第 21–48 行）。
 - compact 族：`load()`/`set(enabled)`（第 56/72 行）及同构的 `load_timestamps`/`set_timestamps`（第 82/97 行）、`load_show_timeline`/`set_show_timeline`（第 107/122 行）、`load_page_flip_on_send`/`set_page_flip_on_send`（第 133/148 行）、`load_combine_queued_prompts`/`set_combine_queued_prompts`（第 160/175 行）、`load_simple_mode`/`set_simple_mode`（第 217/232 行）、`load_vim_mode`/`set_vim_mode`（第 243/259 行）、`load_show_thinking_blocks`/`set_show_thinking_blocks`（第 272/288 行）、`load_group_tool_verbs`/`set_group_tool_verbs`（第 301/317 行）、`load_collapsed_edit_blocks`/`set_collapsed_edit_blocks`（第 330/346 行）— 每个设置一对 `thread_local! Cell<...> CURRENT + LOADED`，首读惰性播种，`set_*` 乐观更新。
 - `load_prompt_suggestions_config() -> Option<bool>`（第 357 行，原始三态）、`load_prompt_suggestions()`/`set_prompt_suggestions(enabled)`（第 369/374 行）。
@@ -1059,14 +1094,17 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 ### 5.8 `modals.rs` / `notices.rs` / `jump.rs`
 
 **modals.rs** — 各类模态的按键/鼠标/粘贴：
+
 - `handle_extensions_modal_key(&mut self, key)`（约第 634 行）、`handle_extensions_modal_mouse_with_copy(...)`（约第 1156 行）、`handle_mcp_setup_key`/`handle_modal_input_key`（约第 1054/1089 行）、`execute_modal_button_action`/`confirm_extensions_modal_action`（约第 1681/2295 行）。
 - `handle_feedback_modal_key/mouse/paste(...)`（约第 120/151/214 行）、`handle_agents_modal_*`/`handle_persona_detail_*`（约第 273/348/373/412 行）、`feedback_modal_open_blocker`/`has_feedback_trace_capacity`（约第 20/39 行）。
 
 **notices.rs** — 瞬时反馈：toast、提示行、模式横幅、终端尺寸/剪贴板反馈：
+
 - `show_toast(&mut self, msg)`/`show_toast_ticks(&mut self, msg, ticks)`/`tick_toast(&mut self) -> bool`（约第 21/200/285 行）、`set_sticky_toast(&mut self, msg)`/`set_sticky_toast_recursive`（约第 180/192 行）、`active_toast_message(&self)`（约第 208 行）、`show_mode_switch_banner(&mut self, mode_name)`/`tick_mode_banner`（约第 226/233 行）、`ephemeral_tip_renderable(&self, screen_height)`（约第 107 行，提示 TTL 总闸门）。
 - `note_terminal_size(&mut self, size)`/`note_terminal_resize(&mut self)`（约第 142/155 行）、`copy_to_clipboard(&mut self, text) -> CopyDelivery`/`copy_to_clipboard_debounced`（约第 248/255 行）、`open_url_or_show(&mut self, url)`/`open_untrusted_url_or_show`（约第 325/345 行）、`guard_image_support(&mut self) -> bool`（约第 271 行）。
 
 **jump.rs** — `/jump` 跳转选择器（核心在 `views/jump.rs`）：
+
 - `dismiss_jump_picker(&mut self)`（约第 13 行）、`restore_jump_viewport(&mut self, restore)`（约第 21 行）、`jump_slot_taken(&self)`（约第 34 行）、`dismiss_jump_picker_if_suppressed(&mut self) -> bool`（约第 41 行）、`sync_jump_preview(&mut self)`（约第 52 行）、`handle_jump_key`/`handle_jump_mouse`（约第 67/100 行）。
 
 ### 5.9 `scrollback/`（消息流渲染内核）
@@ -1074,6 +1112,7 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 `AgentView::draw` 把 `layout.scrollback_content` 交给 `ScrollbackPane`，由后者遍历 `ScrollbackEntry` 并委托 `BlockContent::output()` 产出 `BlockOutput`，最后经 `EntryRenderer` 落到 `Buffer`。
 
 **`scrollback/scrollback_pane.rs`** — 消息流主控件（`StatefulWidget`）：
+
 - `pub struct ScrollbackPane { is_active, mouse_pos, dim_from_entry, hovered_entry, search_highlight, media_paths }`（约第 30 行，构建器模式 `active/with_mouse_pos/with_dim_from/with_hovered_entry/with_search_highlight/with_media_paths`）。
 - `render_with_scratch_and_selection_boundaries(self, area, buf, state, scratch) -> RenderOutputWithSelectionBoundaries`（约第 150 行）— **消息流渲染主入口**：取 scroll info，按 `state.view_mode()` 分派 `render_single_turn` / `render_with_sticky_headers`，再叠加 tool-call hover。
 - `render_with_sticky_headers(&self, area, buf, state, theme, entry_range, scratch)`（约第 294 行）— 构建 prompt 描述符、`compute_sticky_layout` 决定 pinned/pushed 粘性头、画 pushed（带淡出）与 pinned 头、调 `render_content` 画正文、最后 `prepend_header_selection`。
@@ -1081,10 +1120,12 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 - `render_entry_with_ctx_static(entry, ctx, theme, area, buf, mouse_pos, idx) -> Vec<ResolvedSelectableLine>`（约第 712 行）、`render_sticky_header(...)`（约第 563 行）、`render_tool_call_hover(...)`（约第 196 行）、`render_single_turn(...)`（约第 277 行）。
 
 **`scrollback/render.rs`** — 可见窗口的逐 entry 绘制与选择几何构建：
+
 - `render_scrolled_entries_with_selection_boundaries(buf, viewport, entries, scroll_offset, selected_idx, theme, appearance, entry_layouts_cache, tick, mouse_pos, dim_from_entry, search_highlight, content_y0, entry_index_base, media_paths, group_spans, cwd) -> ScrollRenderResultWithBoundaries`（约第 225 行）— **逐 entry 绘制核心**：按缓存高度/间隙推进虚拟 y，裁剪可见范围，算 `top/bottom_clipped` 与 `skip_rows`，构造 `EntryRenderer` 绘制，随后 `ensure_cached` 取缓存输出构建 `VisibleBlockGeometry`、`selection_model` 与选择边界。
 - `render_scrolled_entries_with_scratch(...) -> ScrollRenderResult`（约第 181 行，对外 API）、`struct ScratchBuffer(Buffer)`（约第 69 行，复用离屏缓冲）、`struct ScrollRenderResult { total_height, selection_model, selected_area, scroll_info, link_overlay, inline_media, diagram_affordances, ... }`（约第 142 行）、`timestamp_reserved_for_block(...)`（约第 54 行）、`map_hyperlinks_to_overlay(...)`（约第 834 行）。
 
 **`scrollback/block.rs` / `scrollback/entry.rs`**：
+
 - `pub trait BlockContent`（约第 42 行）— 块渲染接口：`output(ctx)->BlockOutput` 为主，另有 `accent`/`bullet`/`background`/`has_vpad`/`is_foldable`/`next_fold_mode` 等。
 - `pub enum RenderBlock { Stub, UserPrompt, AgentMessage, ToolCall, Thinking, System, SessionEvent, BgTask, Subagent, Workflow, Btw, ContextInfo, MemoryCapture }`（约第 298 行，经 `delegate_block!` 宏委托）+ `impl RenderBlock::rendered_output(&self, ctx) -> RenderedBlockOutput`（约第 388 行）。
 - `pub struct ScrollbackEntry { block, display_mode, ... }`（约第 61 行）+ `ensure_cached`/`cached_rendered_output_ref`/`effective_output`/`context_with_mode_and_budget`（约第 316/381/426/537 行）、`pub struct EntryId(u64)`（约第 30 行）。
@@ -1093,35 +1134,42 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 ### 5.10 `views/` 面板
 
 **`views/dock/mod.rs`** — 面板坞：
+
 - `pub fn render(buf, area, theme, data)`（约第 257 行）— **dock 主渲染**：`DockLayout::with_cap(counts, area.height)` 定行，逐项画 Header/Row/RevealRemaining 并做选中/悬停高亮。
 - `fn section_header(...)`（约第 363 行）、`fn paint_row(...)`（约第 386 行，图标 + kind + description + activity + 右侧 meta/动作）、`stop_button_rect(...)`/`hovered_stop_button_rect(...)`（约第 474/487 行）、`queue_body_rect(...)`（约第 237 行）。
 - `struct DockData {...}`/`DockCounts`（约第 163/139/196 行）、`enum DockItem { Header(Section), Row(Section,usize), RevealRemaining(Section) }`/`enum Section { Workflows, Subagents, Tasks, Watchers, Queued }`（约第 121/78 行）。
 
 **`views/dock/layout.rs`** — dock 行预算分配：
+
 - `struct DockLayout { rows, scrollable, visible, offsets, queue_body_rows }`（约第 67 行）、`with_cap(counts, cap) -> Self`（约第 84 行）— **布局核心**：`grant_rows` 分配额度，按 section 展开状态生成 Header/Row/RevealRemaining，`truncate(height)`。`grant_rows`/`share_rows`/`normalize_no_lone_rows`（约第 243/420/340 行，保证不出现孤立行）。
 - `desired_height(data) -> u16`（约第 449 行）、`item_at(row)`/`visible_rows`/`row_offset`/`hidden_rows`/`queue_body_rows`/`total_rows`（约第 143/148 行起）、`is_show_all_needed(counts, section)`（约第 465 行）。
 
 **`views/prompt_widget/mod.rs`**（3858 行）— 输入框控件（`TextArea` + 下拉/幽灵文本/图片 chip）：
+
 - `pub struct PromptWidget { textarea, textarea_state, textarea_area, file_search, slash_controller, slash_state, suggestions, prompt_suggestion, images, ... }`（第 627 行）。
 - `pub fn draw(&mut self, buf, area, overlay_area, style, info, voice) -> PromptRenderResult`（第 2979 行）— **输入框主渲染**：填底色、画 accent/边框、按 `vpad_top/text/info_block` 切分、渲染 textarea 与信息行、处理 overlay/voice。
 - `pub fn desired_height(&self, area_width, style, has_info, max_height) -> u16`（第 1612 行）、`handle_key(&mut self, key) -> PromptEvent`（第 1690 行）→ `handle_key_inner`（第 1754 行）、`route_enter(&mut self, key) -> EnterOutcome`/`route_enter_with_newline_modifier`（第 2158/2165 行）、`handle_mouse`/`handle_mouse_scroll`/`handle_paste`（第 2231/2235/2286 行）。
 - `stash(&mut self) -> StashedPrompt`/`restore(&mut self, stash)`（第 1048/1073 行）、`set_text`/`set_text_preserving`/`append_text`/`insert_replacing_selection(...)`（第 1124/1177/1184/2406 行，⚠️ 旧名 `insert_str_replacing_selection` 已更名）、🆕 `set_text_discarding_images(&mut self, text)`（第 1106 行 — 换模型/换会话时改文案并丢弃图片 chip）、`refresh_slash(&mut self, models)`/`accept_slash_completion(...)`/`completion_dropdown_*`（第 1206/1344/864 行起）、`insert_image(&mut self, image) -> Result<(), String>`/`drain_images`/`sync_images_with_textarea`（第 2357/2620/2415 行）、`render_info_line(...)`（第 3521 行）。
 
 **`views/list_pane/`** — 通用可滚动列表控件（picker、块查看器、行查看器复用）：
+
 - `pub struct ListPane<'a, T: ListItem> { items, focused, style }`（约第 29 行）、`impl StatefulWidget for ListPane`（约第 64 行）— **渲染管线**：切出底部输入栏、按溢出分滚动条区、`render_items`、角标、复制 toast、滚动条、底栏。`render_items`（约第 214 行）、`render_item_framework(...)`（约第 154 行，NoWrap 截断 vs Wrap 逐行）、`render_corner_indicators`/`render_bottom_bar`/`render_truncation_ellipsis`（约第 437/513/404 行）。
 - `pub trait ListItem`（`mod.rs`，第 96 行起）— `content`/`prefix`/`desired_height`/`stable_id`/`search_text`/`copy_text` 等。
 
 **`views/status_line/mod.rs`** — 状态行：
+
 - `pub enum StatusLineFrame { Off, Reserved{padding}, On{display,padding} }`（约第 113 行）+ `height`/`padding`/`display`、`pub enum StatusLineDisplay { Segments(Vec<StatusSegment>), Text(SanitizedText) }`/`line_count()`（约第 105/153 行）。
 - `pub fn render_status_line(buf, area, display, padding, theme) -> Vec<LinkSpan>`（约第 165 行）— **状态行渲染**：填底色、内缩、`styled_lines` 取行、逐行 `elide` 裁剪、`project_links` 生成链接 span。`styled_lines`/`themed(line, theme)`（约第 218/249 行）、`inner_width(width, padding)`/`struct RowSize { cols, lines }`（约第 213/200 行）。
 
 **`views/agent.rs`（布局，2349 行）** — AgentView 的布局求解器：
+
 - `pub struct AgentViewLayoutParams { ..., model_notice_height: u16 }`（第 103 行，🆕 `model_notice_height` 第 127 行）。
 - `pub struct AgentViewLayout { status_bar, tasks, scrollback, todo, queue, btw, turn_status, banner, plugin_cta, follow_ups, dock, voice_recording, prompt, shortcuts, status_line, scrollback_content, scrollbar_x, timeline_x, timeline_width, model_notice }`（第 137 行，🆕 `model_notice: Rect` 第 156 行）。
 - `pub fn AgentViewLayout::compute(params) -> Self`（第 178 行）— **布局求解器**：按短终端规则裁剪 cta/follow_ups、堆叠各行（含 scrollback 最小 5 行）、`model_notice_height > 0` 时插入 `Constraint::Length(model_notice_height)`，算出所有 Rect。
 - `pane_areas(&self)`/`inner_width(area, cfg, compact)`/`rows_available_for_prompt(params)`（第 444/433/423 行）、`PaneAreas::hit_test(col,row) -> Option<ActivePane>`（第 61 行）、`fill_background(...)`/`render_scrollbar(...)`/`render_entry_hover(...)`（第 456/623/522 行）、`effective_compact(user_compact, terminal_rows) -> bool`（第 97 行）。
 
 **🆕 本次漂移新增的 `views/` 模块**（用于承载模型提示与通用列表/弹窗）：
+
 - `views/model_notice_banner.rs`（81 行）+ 测试 `model_notice_banner_tests.rs` — 模型提示横幅（如「已切换到 X 模型」）。两件套：`height(notice, width) -> u16`（第 26 行，给布局预留行）、`render(area, buf, notice)`（第 31 行，画横幅）；数据源 `session.models.current_notice()`。被 `AgentView::draw` 与 `views/welcome/mod.rs`（`model_notice: Option<&ModelNotice>` 第 698 行）共同消费。
 - `views/modal_list.rs`（171 行）+ 测试 `modal_list_tests.rs` — 抽取出的**通用模态列表绘制工具箱**（`RowStatus`/`RowTag`/`ListRow`、`DETAIL_INDENT`/`NAME_INDENT`），供 settings/remote-control/extensions 等模态复用，替代散落的列表绘制。
 - `views/extensions_modal/skills_tab.rs`（151 行）— extensions 模态的「Skills」页签：编号式 fetch（`next_skills_fetch`/`show_skills_listing`）保证旧答案不覆盖新列表，从 `extensions_modal.rs` 拆出（后者 +32/−6）。
@@ -1130,6 +1178,7 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 ### 5.11 `xai-ratatui-textarea`（自研多行输入控件）
 
 **`src/editor.rs`** — 无 UI 的文本编辑内核（缓冲区 + 编辑命令 + 计划/校验）：
+
 - `pub enum EditCommand { Insert(char), MoveGraphemeLeft/Right, MoveWordLeft/Right(WordStyle), MoveLogicalLineStart/End, DeleteGraphemeBackward/Forward, DeleteWordBackward/Forward(WordStyle), DeleteToLineStart/End }`（约第 20 行）+ `category()`/`selection_collapse_edge()`。`pub enum Movement { Command(EditCommand, HorizontalEdge), VisualRowUp/Down/Start/End, LogicalLineStart/End }`（约第 55 行）。
 - `pub struct EditBuffer { text, cursor_byte, identity: Arc<BufferIdentity>, generation }`（约第 212 行）+ `plan_command(&self, command, atomic_byte_ranges) -> EditPlan`（约第 346 行）— **命令 → 编辑计划**（不含 UI）。`plan_replace_byte_range(&self, range, replacement, atomic)`（约第 322 行）、`apply_plan(&mut self, plan) -> Result<EditOutcome, ApplyEditPlanError>`/`apply(&mut self, command) -> EditOutcome`（约第 480/486 行）、`validate_plan(&self, plan)`（约第 514 行，`StalePlan`/`InvalidRange`/`RemovedTextMismatch`/`InvalidCursor`）。
 - `single_line_viewport(&self, display_width)`/`single_line_viewport_with_atomic_ranges(...)`（约第 586/590 行）、`pub struct EditPlan`/`EditDelta`/`enum EditOutcome { Unchanged, CursorOnly, TextOnly(EditDelta), TextAndCursor(EditDelta) }`（约第 158/127/133 行）。
@@ -1138,6 +1187,7 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 **`src/editor_keys.rs`** — `pub fn classify_key_event(event) -> Option<EditCommand>`（约第 33 行）— **按键 → 编辑命令的唯一映射**（含 C0 控制字节、Kitty 退格变体、Ctrl/Alt/Super 组合）。`fn resolve_movement(event) -> Option<Movement>`（约第 6 行）、`backspace_command`/`delete_command`/`shifted_char`（约第 187/198/179 行）。
 
 **`src/textarea.rs`** — `TextArea` 状态控件：文本 + 元素 + 选择 + 鼠标 + 滚动 + 撤销 + 渲染：
+
 - `pub struct TextArea { text: EditBuffer, wrap_cache, elements, selection, clipboard_provider, scroll_override, show_scrollbar, click_tracker, ... }`（约第 180 行）、`pub struct TextAreaState { scroll: u16 }`（约第 264 行）、`pub struct TextElement { id, range, kind, display }`/`ElementId`/`ElementKind`（约第 99/31/45 行）。
 - `pub fn input(&mut self, event: KeyEvent)`（约第 1870 行）— **按键总入口**：Shift+移动扩展选区；有选区时按类别拦截（插入替换/删除/cut/copy）；再走 `resolve_movement`/`classify_key_event`；最后处理 Enter/Ctrl-Y undo-redo/Ctrl-V paste 等。
 - `handle_mouse(&mut self, ...)`（约第 1076 行）、`tick(&mut self, area, state) -> MouseAction`（约第 1040 行）、`render_lines(&self, area, buf, lines, range)`（约第 3225 行）— **逐行绘制核心**：把一行按「纯文本→元素→纯文本」分段绘制，再第二遍叠加选择高亮。
@@ -1155,6 +1205,7 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 **`src/lib.rs`** — 导出 `Terminal`、`TerminalLike`、`with_synchronized_output`、`resize_purge_rerender`、`resize_viewport_height`、`emit_to_scrollback`、`split_into_line_segments`、`LinkSpan`、`WidthShrink`（约第 12 行）。
 
 **`src/terminal.rs`**：
+
 - `pub struct Terminal<B> { backend, buffers: [Buffer;2], current, hidden_cursor, viewport, viewport_area, last_known_area, last_known_cursor_pos, width_shrink, frame_count, link_ids, link_tables }`（约第 148 行）— 双缓冲 + 视口 + 链接层。
 - `pub fn insert_before<F>(&mut self, height, draw_fn) -> io::Result<()>`（约第 644 行）— **把内容插到内联视口上方**；非 inline 视口无操作。`insert_before_rows(&mut self, rows)`（约第 661 行，wrap-aware 的 ANSI 行插入）、`insert_before_no_scrolling_regions`/`write_semantic_rows`/`insert_before_scrolling_regions`（约第 737/864/917 行）。
 - `pub fn set_viewport_height(&mut self, new_height) -> io::Result<()>`（约第 692 行，增长时若溢出屏幕则先 `scroll_up` 把被覆盖行推入原生 scrollback）。
@@ -1263,27 +1314,27 @@ resize → resize_purge_rerender / resize_viewport_height / set_viewport_height
 
 ## 附录 A：关键文件索引
 
-| 层 | 路径 | 职责 |
-|---|---|---|
-| 入口 | `crates/codegen/xai-grok-pager-bin/src/main.rs` | 进程外壳、子命令分流、runtime |
-| 入口 | `crates/codegen/xai-grok-pager-bin/src/agent_command.rs` | `agent stdio` 信号/生命周期 |
-| 装配 | `xai-grok-pager/src/app/mod.rs` | `app::run`、`init_terminal`、模式/leader 解析 |
-| 循环 | `xai-grok-pager/src/app/event_loop.rs` | 主循环、`Presenter`、`drain_and_process`、`process_effects` |
-| 状态 | `xai-grok-pager/src/app/app_view.rs` | `AppView` 根状态机、输入路由、`draw_inner`、`tick` |
-| 状态 | `xai-grok-pager/src/app/reader_thread.rs` | stdin 读线程 |
-| 拆机 | `xai-grok-pager/src/app/terminal_restore.rs` | teardown 单一定义、panic hook |
-| 观测 | `xai-grok-pager/src/app/event_loop_stall.rs` | 卡顿检测 |
-| 会话视图 | `xai-grok-pager/src/app/agent_view/{mod,render,panes,selection,viewer,input,key_owner,modals,notices,jump}.rs` | AgentView 各面 |
-| 消息流 | `xai-grok-pager/src/scrollback/{scrollback_pane,render,block,entry}.rs` + `blocks/` | 消息块渲染内核 |
-| 面板 | `xai-grok-pager/src/views/{agent,dock/,prompt_widget/,list_pane/,status_line/}` | 布局与各控件 |
-| 输入 | `xai-grok-pager-render/src/input/{key,keyboard_normalizer,line_editor,mouse,macos_modifiers,terminal_support,scroll_log}.rs` | 输入解析 |
-| 终端探测 | `xai-grok-pager-render/src/terminal/{mod,keyboard,kitty_keyboard,probe,da2,xtversion}.rs` | 环境/能力探测 |
-| 渲染 | `xai-grok-pager-render/src/render/{draw,wrapping,line_utils,scrollbar,highlight,color,renderable,safe_buf,terminal_output,osc8,bidi,tool_paths,image_overlay,video_overlay,gboom_overlay,preview_overlay}.rs` | 渲染管线 |
-| 宿主 | `xai-grok-pager-render/src/host/{mod,display_refresh}.rs` | 平台/刷新率 |
-| 主题 | `xai-grok-pager-render/src/theme/{mod,cache,color_support,env_appearance,system_appearance,osc11,md_style,tokyonight,groknight,grokday,rosepine,oscura,terminal_default}.rs` | 主题与颜色 |
-| 外观 | `xai-grok-pager-render/src/appearance/{mod,config,cache,scroll_mode,text_selection,permission_cursor,follow_up_behavior,render_mermaid,watcher}.rs` | 运行时外观 |
-| 控件 | `xai-ratatui-textarea/src/{editor,editor_keys,textarea,wrapping}.rs` | 多行输入控件 |
-| 控件 | `xai-ratatui-inline/src/{terminal,segment,scrollback,resize,common}.rs` | 内联视口终端 |
+| 层    | 路径                                                                                                                                                                                                            | 职责                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 入口   | `crates/codegen/xai-grok-pager-bin/src/main.rs`                                                                                                                                                               | 进程外壳、子命令分流、runtime                                    |
+| 入口   | `crates/codegen/xai-grok-pager-bin/src/agent_command.rs`                                                                                                                                                      | `agent stdio` 信号/生命周期                                 |
+| 装配   | `xai-grok-pager/src/app/mod.rs`                                                                                                                                                                               | `app::run`、`init_terminal`、模式/leader 解析               |
+| 循环   | `xai-grok-pager/src/app/event_loop.rs`                                                                                                                                                                        | 主循环、`Presenter`、`drain_and_process`、`process_effects` |
+| 状态   | `xai-grok-pager/src/app/app_view.rs`                                                                                                                                                                          | `AppView` 根状态机、输入路由、`draw_inner`、`tick`               |
+| 状态   | `xai-grok-pager/src/app/reader_thread.rs`                                                                                                                                                                     | stdin 读线程                                             |
+| 拆机   | `xai-grok-pager/src/app/terminal_restore.rs`                                                                                                                                                                  | teardown 单一定义、panic hook                              |
+| 观测   | `xai-grok-pager/src/app/event_loop_stall.rs`                                                                                                                                                                  | 卡顿检测                                                  |
+| 会话视图 | `xai-grok-pager/src/app/agent_view/{mod,render,panes,selection,viewer,input,key_owner,modals,notices,jump}.rs`                                                                                                | AgentView 各面                                          |
+| 消息流  | `xai-grok-pager/src/scrollback/{scrollback_pane,render,block,entry}.rs` + `blocks/`                                                                                                                           | 消息块渲染内核                                               |
+| 面板   | `xai-grok-pager/src/views/{agent,dock/,prompt_widget/,list_pane/,status_line/}`                                                                                                                               | 布局与各控件                                                |
+| 输入   | `xai-grok-pager-render/src/input/{key,keyboard_normalizer,line_editor,mouse,macos_modifiers,terminal_support,scroll_log}.rs`                                                                                  | 输入解析                                                  |
+| 终端探测 | `xai-grok-pager-render/src/terminal/{mod,keyboard,kitty_keyboard,probe,da2,xtversion}.rs`                                                                                                                     | 环境/能力探测                                               |
+| 渲染   | `xai-grok-pager-render/src/render/{draw,wrapping,line_utils,scrollbar,highlight,color,renderable,safe_buf,terminal_output,osc8,bidi,tool_paths,image_overlay,video_overlay,gboom_overlay,preview_overlay}.rs` | 渲染管线                                                  |
+| 宿主   | `xai-grok-pager-render/src/host/{mod,display_refresh}.rs`                                                                                                                                                     | 平台/刷新率                                                |
+| 主题   | `xai-grok-pager-render/src/theme/{mod,cache,color_support,env_appearance,system_appearance,osc11,md_style,tokyonight,groknight,grokday,rosepine,oscura,terminal_default}.rs`                                  | 主题与颜色                                                 |
+| 外观   | `xai-grok-pager-render/src/appearance/{mod,config,cache,scroll_mode,text_selection,permission_cursor,follow_up_behavior,render_mermaid,watcher}.rs`                                                           | 运行时外观                                                 |
+| 控件   | `xai-ratatui-textarea/src/{editor,editor_keys,textarea,wrapping}.rs`                                                                                                                                          | 多行输入控件                                                |
+| 控件   | `xai-ratatui-inline/src/{terminal,segment,scrollback,resize,common}.rs`                                                                                                                                       | 内联视口终端                                                |
 
 ## 附录 B：建议阅读顺序
 
