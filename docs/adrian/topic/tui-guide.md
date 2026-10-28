@@ -2,9 +2,15 @@
 
 > 范围：Grok Build 的终端交互界面（TUI）——从进程入口、事件循环、输入解析、渲染管线、主题外观，到核心控件与自研 ratatui 组件。
 >
-> 快照：工作树 `HEAD = 7d70d52c`（`SOURCE_REV = 036a5d83…`），采集于 2026-10-14，并于同日按 HEAD 刷新第 1 章（§1.1/1.4/1.5/1.6/1.8）与第 5 章（§5.1/5.2/5.5/5.7/5.10）。
+> 快照：工作树 `HEAD = 7d70d52c`（`SOURCE_REV = 036a5d83…`），采集于 2026-10-14，并于同日按 HEAD 刷新第 1 章（§1.1/1.4/1.5/1.6/1.8）与第 5 章（§5.1/5.2/5.5/5.7/5.10）。2026-10-28 复核：当前 `HEAD = 42f4d7d3`，本文覆盖的六个 crate 与 `7d70d52c` **逐字节相同**，故上述快照仍然精确有效，见下一条。
 >
 > **刷新记录（2026-10-14，`9607d2c5` → `7d70d52c`）**：上游并入 3 个提交后，`xai-grok-pager-render` 的 `render/`、`theme/`、`input/`、`terminal/` 与两个 `xai-ratatui-*` 的**核心文件未变**；漂移集中在 pager 应用层（`main.rs` / `app/mod.rs` / `app/event_loop.rs` / `app/app_view.rs` / `app/voice_state.rs`(新) / `agent_view/*` / `views/*`）。本次已回同步：§1.1（新增 `run_update_blocking`/`is_opted_out_of_updates`）、§1.4（新增 `voice_state` 模块与 `resolve_voice_mode_enabled_as`）、§1.5（**select! 五个自限定时器上移到 ACP 之上**）、§1.6（voice 状态类型迁出至 `app/voice_state.rs` + 新增 `logout_pending`/`distribution`/`voice_*` 字段）、§1.8（调用链补行号与退出更新路径）、§3.3（`is_unsafe_display_char` 已搬到 `xai-tty-utils/src/display_char.rs`）、§4.7（`appearance/*` 行号 + `persist_respect_manual_folds_to` + `load_keep_text_selection` 返回类型变更）、§5.1/5.2（`load_failed`/`workspace_dashboard_enabled` + `model_notice` 渲染接入）、§5.5（计划注释关闭按钮 + `delete_plan_comment_by_id`）、§5.7（`is_awaiting_user_answer`）、§5.10（`AgentViewLayout.model_notice` + `prompt_widget` 方法更名 + 新增 `model_notice_banner.rs`/`modal_list.rs`/`skills_tab.rs`）。
+>
+> **刷新记录（2026-10-28，`7d70d52c` → `42f4d7d3`，`SOURCE_REV = 559751fd`）**：本文全部行号快照**无需改写**，理由是被覆盖的六个 crate 在两个提交之间逐字节相同：`git rev-parse <commit>:crates/codegen/<crate>` 取树哈希逐一比对，`xai-grok-pager` / `xai-grok-pager-bin` / `xai-grok-pager-render` / `xai-ratatui-textarea` / `xai-ratatui-inline` / `xai-tty-utils` **六个全部 IDENTICAL**，且 `7d70d52c` 确为 `42f4d7d3` 的祖先（`git merge-base --is-ancestor` 通过）、`git log 7d70d52c..HEAD -- <这六个路径>` 零提交。也就是说这一轮全库文档同步里唯一没有漂移的就是本文所讲的 TUI 运行时。
+>
+> 该结论另有独立一手实测支撑（口径与局限一并写明）：把「`SYM`（约?第 N 行）」与「- `SYM` … 约第 N 行。」两种**锚点无歧义**的形状交给脚本回源比对，**574 条形状可归因**，其中 **357 条在归属文件里定位到该符号的定义行、336 条与文中数字完全相等**；剩 **21 条逐条手工判定后全部是本机判据的伪告警**，没有一条是文档错误——成因三类：①文中是**区间**（如「约第 74–137 行」「45–55」「104–165」「391–479」），脚本拿单个成员的定义行去比区间起点；②同名重载（`app_view.rs` 三处 `pub fn new`，取到 36 那条而不是文中 1341）；③小节的文件写在**正文段落**而非标题里（§4.2 的 `struct Theme` 实为 `theme/tokyonight.rs` 第 46 行、`Theme::terminal_default()` 实为 `theme/terminal_default.rs` 第 28 行，两处数字都对，只是脚本沿用了 §4.1 的 `theme/mod.rs`）。
+>
+> **仍未逐条复测的部分**：919 个「第 N」记号里，其余 345 个属于上述两种形状之外（散文中的多个并列名各带一个数、字段级引用、`文件.rs 第 N 行` 的内联跨文件引用），未被脚本归因、也就**没有逐条一手复测**。它们同样受「六个 crate 逐字节相同」这条保护——漂移在物理上不可能发生；但「数字从一开始就写错」这类错误不受该保护，本轮未穷尽。按本文既有索引约定，这类情况用 `grep -n 'fn 函数名' 文件` 即可自证。：源码位置一律以「`文件路径` + `函数名`」为主锚点，文中括号里的「约第 N 行」只是**阅读时的快照**，随上游同步会漂移，**请以函数名为准**（`grep -n 'fn 函数名' 文件` 即可重新定位）。
 >
 > **索引约定**：源码位置一律以「`文件路径` + `函数名`」为主锚点，文中括号里的「约第 N 行」只是**阅读时的快照**，随上游同步会漂移，**请以函数名为准**（`grep -n 'fn 函数名' 文件` 即可重新定位）。
 >
@@ -206,6 +212,8 @@ TUI 库根，只做模块声明与 re-export，无运行逻辑。关键点：
 
 **全系统最热的文件**：一个 `biased` `tokio::select!` 大循环，轮询终端输入、ACP 消息、后台任务完成、渲染定时器、信号、配置热重载。
 
+> 本节是**逐函数清单**（签名、字段、行位、单条语义）。若要的是「为什么这么切」——同步 dispatch / 异步 effects 的可单测契约、27 臂 `biased` 序的防饥饿论证、写队列背压闭环与失败路径——读[第 8 篇《TUI 交互循环与渲染》](../sourceReader/08-TUI交互循环与渲染.md)。本节引用的 `Presenter` 方法组、`drain_and_process`、`process_effects` 与 select 臂顺序已在 `HEAD = 42f4d7d3` 复核过（`WriterProgress` 490 / `struct Presenter` 500 / `impl` 516 / `drain_and_process` 3200 / `process_effects` 3952 五处行位当时均命中），其余「约第 N 行」仍是 `7d70d52c` 快照。
+
 核心类型：
 
 - `pub(crate) struct TimedInputEvent { event: Event, arrived_at: Instant }`（约第 41 行）— 带到达时间戳的终端事件，用于卡顿测量。
@@ -314,8 +322,8 @@ handle_input → handle_input_at_with_paste_provenance
   └─(Agent)   AgentView 输入 + registry.lookup
         └─► InputOutcome::Action(...)
               └─► event_loop::drain_and_process.handle_one
-                    └─► dispatch::dispatch(action, app)      // dispatch/router.rs:156, dispatch_inner:165
-                          └─► Vec<Effect> → process_effects → effects::execute  // effects/mod.rs:120
+                    └─► dispatch::dispatch(action, app)      // dispatch/router.rs · dispatch(+0) / dispatch_inner(+0)
+                          └─► Vec<Effect> → process_effects → effects::execute  // app/effects/mod.rs · execute(+0)
 ```
 
 ### 1.7 reader_thread / terminal_restore / event_loop_stall / startup
@@ -678,7 +686,7 @@ ScrollDirection::from_mouse_event()
 
 - 再导出：`pub use super::tool_paths::{path_basename, path_for_tool_header, shorten_path};`（第 5 行）、`pub use crate::util::byte_offset_at_width;`（第 6 行）、`pub use xai_tty_utils::is_unsafe_display_char;`（第 7 行）。
 - `line_to_static(line) -> Line<'static>`（第 10 行）、`push_owned_lines(src, out)`（第 26 行）。
-- `is_unsafe_display_char(c) -> bool`（第 7 行再导出）— 判定不可信文本中必须清洗的字符：C0/C1 控制符 + bidi 控制/零宽格式字符（Trojan-Source 防伪）；**全局唯一判据**。⚠️ **实现已迁出**：现位于 `crates/codegen/xai-tty-utils/src/display_char.rs:6`（同目录 `display_char_tests.rs` 为其测试），`line_utils.rs` 仅 `pub use` 转发。
+- `is_unsafe_display_char(c) -> bool`（第 7 行再导出）— 判定不可信文本中必须清洗的字符：C0/C1 控制符 + bidi 控制/零宽格式字符（Trojan-Source 防伪）；**全局唯一判据**。⚠️ **实现已迁出**：现位于 `crates/codegen/xai-tty-utils/src/display_char.rs` · `is_unsafe_display_char(+0)`（同目录 `display_char_tests.rs` 为其测试），`line_utils.rs` 仅 `pub use` 转发。
 - `floor_char_boundary(s, index) -> usize`（第 34 行）— nightly 的 polyfill。
 - `truncate_str(s, max_width) -> String`（第 44 行）、`truncate_line(line, max_width) -> Line`（第 49 行，在预算耗尽的 span 内切并补 `…`）。
 - `fit_line_to_width(line, width) -> Line`（第 90 行）— **按字素簇**裁剪或补空格使每列都是真实单元（防宽字形留下幽灵格）；表格行依赖它。
@@ -1211,7 +1219,7 @@ pane 级键盘/滚轮路由，以及 dock（面板坞）的数据投影与激活
 - `pub fn set_viewport_height(&mut self, new_height) -> io::Result<()>`（约第 692 行，增长时若溢出屏幕则先 `scroll_up` 把被覆盖行推入原生 scrollback）。
 - `pub fn flush(&mut self) -> io::Result<bool>`/`flush_with_links(&mut self)`/`emit_frame_with_links(...)`（约第 343/399/1126 行，双缓冲差分输出，可选 OSC-8 链接）、`pub fn draw<F>(&mut self, render_callback) -> io::Result<CompletedFrame>`/`try_draw`（约第 484/497 行）。
 - `pub fn set_frame_links(&mut self, spans: &[LinkSpan])`/`diff_large_with_links(...)`/`write_osc8_open/close(...)`（约第 357/1086/68 行）、`resize(&mut self, area)`/`autoresize(&mut self)`/`compute_inline_size(...)`/`reflowed_cursor_offset(&self, new_width)`（约第 438/470/1196/1257 行）、`set_viewport(&mut self, viewport)`/`set_viewport_area(&mut self, area)`（约第 1278/1309 行）。
-- `pub struct LinkSpan`/`enum WidthShrink { Truncates, Reflows }`/`OurFrame<'a>`（约第 23/34/109 行）。
+- `pub struct LinkSpan`/`enum WidthShrink { Truncates, Rewraps }`（`Truncates` 带 `#[default]`；旧写法 `Reflows` 与当前源码不符）/`OurFrame<'a>`（约第 23/34/109 行）。
 
 **`src/segment.rs`** — `pub fn split_into_line_segments<'a>(input, term_width) -> Vec<LineSegment<'a>>`（约第 84 行）— **零拷贝行切分**：用 `anstyle_parse` VTE 状态机逐字节解析，按可视宽度在 char 边界换行，处理 CR/LF/ANSI/宽字符。`pub struct LineSegment<'a> { content: &'a str, ends_with_crlf: bool }`（约第 8 行）。
 
@@ -1345,4 +1353,4 @@ resize → resize_purge_rerender / resize_viewport_height / set_viewport_height
 
 ---
 
-*本文档为只读源码调研产物，未改动任何源码。所有「约第 N 行」为采集时快照（HEAD `9607d2c5`），请以函数名为定位主锚点。*
+*本文档为只读源码调研产物，未改动任何源码。所有「约第 N 行」为采集时快照（正文基线 `HEAD = 7d70d52c`；§1.5 的 `Presenter`/`drain_and_process`/`process_effects`/臂序另在 `42f4d7d3` 复核），请以函数名为定位主锚点。机制层的对读文档是[第 8 篇《TUI 交互循环与渲染》](../sourceReader/08-TUI交互循环与渲染.md)。*

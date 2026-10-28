@@ -1,22 +1,21 @@
-[上一篇：工具协议与扩展体系](10-工具协议与扩展体系.md) · [总目录](README.md) · [下一篇：认证网络遥测与更新](12-认证网络遥测与更新.md)
+[上一篇：工具协议与扩展体系](10-工具协议与扩展体系.md) · [总目录](README.md) · 第 11 / 22 篇 · [下一篇：认证网络遥测与更新](12-认证网络遥测与更新.md)
 
-> **本篇位置**：第 11 / 18 篇
+> **本篇位置**：第 11 / 22 篇
 
 # 11 · Workspace 权限、沙箱与 Git
 
 > **场景**：一个工具要「读文件 / 写文件 / 跑命令 / 改 Git」，但有三条线必须同时满足——(1) **Workspace 边界**：操作只能发生在工作区之内；(2) **权限边界**：每次敏感操作要过配置规则 + 运行时授权两道关卡；(3) **OS 沙箱边界**：进程级用 Landlock/Seatbelt 兜底，子进程网络按 seccomp 封禁。本章把这三件事拆开讲清楚，并补上第四个收口面——`WorkspaceOps`。
 >
-> **阅读说明**：源码基准为当前 HEAD `2178c69c`（2026-09-23）。工具版本：Rust 1.94.0（`rust-toolchain.toml:11`，`channel = "1.94.0"`）；workspace members 共 **102** 个。
+> **阅读说明**：源码基准 `HEAD = 42f4d7d3`（2026-10-27，`SOURCE_REV = 559751fd`；前次基准 `HEAD = 0e2bfffb` / `SOURCE_REV = 036a5d83`）。工具版本：Rust 1.94.0（`rust-toolchain.toml` `[toolchain].channel`，`channel = "1.94.0"`）；workspace members 共 **107** 个。
 >
 > **索引记法**：`文件路径 符号：名字 偏移：+N`。**顶层符号**（自由函数/类型/常量/trait）只写名字，其定义行即 `偏移：+0`；本章对这类符号有时附「第 N 行」作为定义行快照，它不构成主依据。**成员**（trait / impl 内的方法）写成 `文件 impl <Type> 函数：name 偏移：+N`，**+0 为该 impl / trait 的头部行**。行号随版本变化，以当前源码为准。
 >
-> **对旧版的两处必要更正**：
-> 1. 旧文档用 `xai-grok-sandbox/src/lib.rs:320` 与 `xai-grok-sandbox/src/child_net.rs:105` 作为沙箱锚点，这两个行号在当前源码已不对应任何有意义的位置。本文全部改为函数 + 偏移：`SandboxManager` 系列见 4.5，seccomp 见 4.5 的 `child_net` 小节。
-> 2. 旧文档写「`hub_gate` 里 Daemon 宿主永远强制审批、Sandbox 宿主需 `GROK_HITL_PERMISSION_LIVE`」。**当前源码正好相反**：`resolve_gate` 对 `WorkspaceHostKind::Daemon` 返回 `false`（**不强制**，是 pre-release 过渡态），对 `WorkspaceHostKind::Sandbox` 才看 opt-in。详见步骤 7。
+> **三条与旧版不同的重要更正**（历史背景见文末「变更记录」）：
+> 1. **权限规则引擎已不在这个 crate 里**。`CompiledPolicy`、`GatePreflight`、`shell_access`、`bash_command_splitting` 等判定文件的现居地是 `crates/codegen/xai-grok-permission-rules/src/`，不再是 `xai-grok-workspace/src/permission/`；后者只剩运行时装配那一半。**归属与接线见本篇 4.2，机制全貌（求值顺序、bash 拆解、受管策略、YOLO pin、shell 访问门、exec/env/git 风险、folder trust）在第 [18](18-权限规则引擎.md) 篇。**
+> 2. `hub_gate` 的宿主档位语义与旧版**正好相反**：`resolve_gate` 对 `WorkspaceHostKind::Daemon` 返回 `false`（**不强制**，是 pre-release 过渡态），对 `WorkspaceHostKind::Sandbox` 才看 opt-in。详见步骤 7。
+> 3. **沙箱现在是三层**：进程级的 `SandboxManager`（Landlock/Seatbelt，启动期套上）、**本轮新长的按命令策略层** `xai-grok-sandbox/src/command/`（Seatbelt 逐命令改写），以及宿主侧的编排层 `WorkspaceSandbox`（`xai-grok-workspace/src/sandbox/`）。三者的触发时机、粒度与失败语义都不同，别混。进程级见 4.5，三层分界见 4.5.1，命令级与宿主编排见第 [17](17-命令级沙箱策略层.md) 篇。
 >
-> 相关子系统分别在：`crates/codegen/xai-grok-workspace`（实现：`WorkspaceOps` / 权限 / 会话）、`crates/codegen/xai-grok-workspace-client`（代理模式的类型化客户端）、`crates/codegen/xai-grok-workspace-daemon`（守护化与预览监管）、`crates/codegen/xai-grok-workspace-types`（纯数据线格式）、`crates/codegen/xai-grok-sandbox`（OS 级沙箱）、`crates/codegen/xai-gix-status`（gix 线程预算）、`crates/codegen/xai-hunk-tracker`（逐 hunk 改动追踪）。
->
-> **本次刷新（相对上次基线 `6c01b90c`）的要点**：`permission/shell_access.rs` 改为用 **tree-sitter** 解析 shell（`use tree_sitter::Node`），`bash_command_splitting.rs` 的 `try_parse_shell` 也走 tree-sitter——即 workspace 现在依赖 workspace 级 `tree-sitter = "0.26"`；`hub_gate` 的宿主档位语义反转（见上）；`FolderGrants` 新增 `grant_dir` 键；`WorkspaceOps` 新增 `workspace_info` / `server_version` / `repos_list` / `begin_prompt` / `end_prompt` / `get_rewind_points` / `rewind_to` / `call_tool_with_context`，且 `call_tool` 改为转调后者；`WorkspaceHandle` 的多数方法偏移较旧文档漂移了 1～11。
+> 相关子系统分别在：`crates/codegen/xai-grok-workspace`（实现：`WorkspaceOps` / 权限运行时装配 / 会话）、`crates/codegen/xai-grok-permission-rules`（**规则引擎本体，本轮从 workspace 拆出**，见 4.2）、`crates/codegen/xai-grok-workspace-client`（代理模式的类型化客户端）、`crates/codegen/xai-grok-workspace-daemon`（守护化与预览监管）、`crates/codegen/xai-grok-workspace-types`（纯数据线格式）、`crates/codegen/xai-grok-sandbox`（OS 级沙箱 + **本轮新长的命令级策略层 `src/command/`**，见 4.5 与第 17 篇）、`crates/codegen/xai-gix-status`（gix 线程预算）、`crates/codegen/xai-hunk-tracker`（逐 hunk 改动追踪）。
 
 ---
 
@@ -34,7 +33,7 @@
    ┌─────────────────────────────────────────────────────────────────────────┐
    │ Enum：WorkspaceOps    Local{ handle } | Proxy{ client }                  │
    │ crates/codegen/xai-grok-workspace/src/workspace_ops.rs                  │
-   │   Enum 定义在 1507 行；impl 头在 1513 行                                  │
+   │ enum 与 impl 相邻两行；下表成员偏移一律相对 `impl WorkspaceOps` 头（记作 +0）                │
    │   impl WorkspaceOps  函数：call_tool  偏移：+241                          │
    │                     → 转调 call_tool_with_context  偏移：+254            │
    └──────────┬──────────────────────────────────────┬───────────────────────┘
@@ -42,12 +41,12 @@
               ▼                                      ▼
    ┌──────────────────────────────┐    ┌────────────────────────────────────┐
    │ ② 权限：本地双层               │    │ WorkspaceClient（harness 代理）      │
-   │  · 配置层 CompiledPolicy      │    │ crates/codegen/xai-grok-workspace-  │
-   │  · 运行时 PermissionHandle    │    │ client/src/lib.rs                   │
+   │  · 配置层 CompiledPolicy      │    │ xai-grok-workspace-client           │
+   │  · 运行时 PermissionHandle    │    │ src/lib.rs                          │
    │  · 预检 GatePreflight         │    └────────────────────────────────────┘
-   │ permission/policy.rs /        │
-   │ permission/manager/mod.rs /   │    ┌────────────────────────────────────┐
-   │ permission/gate_preflight.rs  │    │ ② 权限：远端/沙箱宿主              │
+   │ rules/src/policy.rs           │
+   │ rules/src/gate_preflight.rs   │    ┌────────────────────────────────────┐
+   │ workspace/permission/manager/ │    │ ② 权限：远端/沙箱宿主              │
    └──────────────┬───────────────┘    │ Enum：ToolApprovalGate             │
                   │ 通过                │ 函数：approval_gate_for             │
                   ▼                     │ permission/hub_gate.rs             │
@@ -55,8 +54,8 @@
    │ ③ OS 沙箱（进程级，启动期套上）  │
    │ Struct：SandboxManager        │
    │ 子进程 seccomp：child_net      │
-   │ xai-grok-sandbox/src/lib.rs   │
-   │ xai-grok-sandbox/src/child_net.rs │
+   │ sandbox/src/lib.rs            │
+   │ sandbox/src/child_net.rs      │
    └──────────────┬───────────────┘
                   │ 执行
                   ▼
@@ -66,16 +65,21 @@
    └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+图中缩写：`rules/src/…` = `crates/codegen/xai-grok-permission-rules/src/…`（**本轮拆出的规则引擎 crate**），`workspace/permission/manager/` = `crates/codegen/xai-grok-workspace/src/permission/manager/`，`sandbox/src/…` = `crates/codegen/xai-grok-sandbox/src/…`。
+
+**图里少画了一层**：③ 只表示**进程级**沙箱（启动期一次性套上）。本版 `xai-grok-sandbox` 内还长出了一个**按命令**的策略层 `src/command/`——它在每次 bash 执行前改写该命令的沙箱参数，与 ② 的权限裁决在同一条时序线上、但位置更底下。两者不是替代关系：完整讲解在第 17 篇，本章只在 4.5 末尾划清边界。
+
 | 子系统 | 入口类型 / trait | 位置 | 一句话职责 |
 |--------|-----------------|------|-----------|
 | Workspace 操作收口 | `Enum：WorkspaceOps` | `crates/codegen/xai-grok-workspace/src/workspace_ops.rs` | Local / Proxy 双模，所有宿主副作用唯一出口 |
-| 类型化线契约 | `Trait：WorkspaceRpc` + `Trait：WorkspaceOp` | `crates/codegen/xai-grok-workspace-types/src/rpc/mod.rs` / `crates/codegen/xai-grok-workspace/src/workspace_ops.rs` | 每个操作声明 `METHOD` + `ACTIVITY` + `Response`，再加本地 `execute()` |
-| 权限决策层（配置） | `Struct：CompiledPolicy` | `crates/codegen/xai-grok-workspace/src/permission/policy.rs` | 把 `PermissionConfig` 编译成可求值的规则集 |
+| 类型化线契约（声明侧） | `Trait：WorkspaceRpc` | `crates/codegen/xai-grok-workspace-types/src/rpc/mod.rs` | 每个操作声明 `METHOD` + `ACTIVITY` + `Response` |
+| 类型化线契约（执行侧） | `Trait：WorkspaceOp` | `crates/codegen/xai-grok-workspace/src/workspace_ops.rs` | 在 `WorkspaceRpc` 之上补本地 `execute()` |
+| 权限决策层（配置） | `Struct：CompiledPolicy` | `crates/codegen/xai-grok-permission-rules/src/policy.rs` | 把 `PermissionConfig` 编译成可求值的规则集 |
 | 权限决策层（运行时） | `Enum：PermissionHandle` | `crates/codegen/xai-grok-workspace/src/permission/manager/mod.rs` | actor 承载授权状态；`AllowAll` 是旁路变体 |
-| 预检合并 | `Struct：GatePreflight` | `crates/codegen/xai-grok-workspace/src/permission/gate_preflight.rs` | 一次性评估「直接规则 + 两道 bash 安全门」，保留 `Ask` 溯源 |
+| 预检合并 | `Struct：GatePreflight` | `crates/codegen/xai-grok-permission-rules/src/gate_preflight.rs` | 一次性评估「直接规则 + 两道 bash 安全门」，保留 `Ask` 溯源 |
 | Hub 审批门 | `Enum：ToolApprovalGate` | `crates/codegen/xai-grok-workspace/src/permission/hub_gate.rs` | 远端/沙箱宿主上，每个变更型工具调用都要 owner 点头 |
 | OS 沙箱 | `Struct：SandboxManager` | `crates/codegen/xai-grok-sandbox/src/lib.rs` | 进程启动期套 Landlock/Seatbelt；子进程网络 seccomp 封禁 |
-| 子进程封网 | `Module：child_net` | `crates/codegen/xai-grok-sandbox/src/child_net.rs` | seccomp BPF：namespace lockdown + child network 两个过滤器 |
+| 子进程封网 | `Module：child_net` | 声明在 `crates/codegen/xai-grok-sandbox/src/lib.rs`（`pub mod child_net;`），实体在同目录 `child_net.rs` | seccomp BPF：namespace lockdown + child network 两个过滤器 |
 | Git 线程预算 | `xai-gix-status` | `crates/codegen/xai-gix-status/src/lib.rs` | 给 gix 的并行 status 扫描设上限，避免 spawn 失败 abort 进程 |
 | 改动追踪 | `Struct：HunkTrackerHandle` | `crates/codegen/xai-hunk-tracker/src/handle.rs` | agent 每次写盘都登记成一个可回滚的 hunk |
 
@@ -92,14 +96,14 @@
                         arguments: { command: "rm -rf build/" } }
         │
 ② Shell 批处理（见 10 章）
-   tool_calls.rs impl SessionActor（头在第 309 行）
+   tool_calls.rs `impl SessionActor`（该 impl 头记作 +0）
      函数：execute_tool_calls        偏移：+26
               → 函数：execute_tool_calls_batch  偏移：+175
               → 函数：prepare_tool_call         偏移：+1136
         │
 ③ 派发
-   tool_dispatch.rs 函数：dispatch_tool（顶层，第 16 行）
-        │  → dispatch_observed（相对 dispatch_tool 头 偏移：+27）组装 ToolCallContext
+   tool_dispatch.rs 函数：dispatch_tool（顶层符号，定义行即 +0）
+        │  → 函数：dispatch_observed（同文件顶层符号）组装 ToolCallContext
         │  → WorkspaceOps::call_tool_with_context(...)
         ▼
 ④ Local 模式：取会话里已绑定的 FinalizedToolset 调用 BashTool
@@ -146,7 +150,7 @@
 
 ### 步骤 1 — `WorkspaceOps`：为什么需要这一层
 
-`Enum：WorkspaceOps`（`crates/codegen/xai-grok-workspace/src/workspace_ops.rs`，定义在 1507 行）只有两个变体：
+`Enum：WorkspaceOps`（`crates/codegen/xai-grok-workspace/src/workspace_ops.rs`，顶层符号，定义行即 +0）只有两个变体：
 
 ```rust
 pub enum WorkspaceOps {
@@ -155,7 +159,7 @@ pub enum WorkspaceOps {
 }
 ```
 
-它的存在解决一个具体问题：**同一套工具代码要能在「工具就在本进程」与「工具在远端 workspace server」两种部署下都跑**，而调用方不该关心是哪一种。`impl WorkspaceOps` 头在 1513 行，成员偏移相对它 `+0`：构造器 `local`（`+4`）、`proxy`（`+7`）、`proxy_with_connected`（`+13`，额外传入一个已连接标志 `Arc<AtomicBool>`）；探询 `is_proxy`（`+19`）、`client`（`+23`）、`workspace_handle`（`+30`）。
+它的存在解决一个具体问题：**同一套工具代码要能在「工具就在本进程」与「工具在远端 workspace server」两种部署下都跑**，而调用方不该关心是哪一种。`impl WorkspaceOps` 紧随 enum 定义（该 impl 头记作 `+0`；同文件更靠后还有**第二个** `impl WorkspaceOps` 块，别把偏移算串了）：构造器 `local`（`+4`）、`proxy`（`+7`）、`proxy_with_connected`（`+13`，额外传入一个已连接标志 `Arc<AtomicBool>`）；探询 `is_proxy`（`+19`）、`client`（`+23`）、`workspace_handle`（`+30`）。
 
 `函数：call_tool`（偏移 `+241`）与 `函数：call_tool_with_context`（偏移 `+254`）是本章的核心出口。本版 `call_tool` 只做一件事：用 `call_id` 造一个 `ToolCallContext`，然后转调 `call_tool_with_context`；双模语义全在后者：
 
@@ -166,20 +170,28 @@ pub enum WorkspaceOps {
 
 > **注意**：Local 模式下 `call_tool` **必须**拿到 `session_id`——工具集是按会话绑定的，没有会话就没有工具集。
 
-`函数：bind_local_session`（偏移 `+42`）负责把工具集装进会话：它先试 `handle.replace_session_toolset_if_mapped`（`handle.rs` 偏移 `+2666`，相对 `impl WorkspaceHandle` 头 `+437`），不行则调 `handle.create_session_with_tracker_and_viewer_ctx(...)`（`CapabilityMode::All`），带一个 **2 次重试**的循环——绑定失败会重试，因为会话可能正在被别的路径创建。本版签名多了 `viewer_ctx: Option<WorkspaceViewerContext>` 参数，返回 `WorkspaceResult<bool>`（`false` = proxy 模式，无可绑定）。
+`函数：bind_local_session`（偏移 `+42`）负责把工具集装进会话：它先试 `handle.replace_session_toolset_if_mapped`（`handle.rs` · 主 `impl WorkspaceHandle` 偏移 `+2708`），不行则调 `handle.create_session_with_tracker_and_viewer_ctx(...)`（`CapabilityMode::All`）——循环体是 `for _ in 0..2`，**循环外还补一次**换绑，所以最坏是 3 次 `replace_session_toolset_if_mapped` 尝试；重试的理由是「会话可能正被别的路径创建」。全失败才报 `SessionNotFound`。本版签名多了 `viewer_ctx: Option<WorkspaceViewerContext>` 参数，返回 `WorkspaceResult<bool>`（`false` = proxy 模式，无可绑定）。
 
 其余面向会话生命周期的门面：`end_local_session`（`+76`，会先 `handle.on_session_ended` 再 `drop_session`）、`end_local_session_if_bound`（`+87`，只有当前 toolset 仍是绑定的那个才释放）、`on_before_turn`（`+97`）、`on_after_turn`（`+111`）。
 
-新增的便利方法（均为本版新增，偏移相对同一 impl 头）：`workspace_info`（`+166`）、`server_version`（`+171`）、`git_status`（`+179`）、`git_status_ext`（`+185`）、`repos_list`（`+192`）、`hook_registry`（`+195`）、`begin_prompt`（`+199`）、`end_prompt`（`+206`）、`get_rewind_points`（`+213`）、`rewind_to`（`+222`）、`put_files`（`+233`）、`get_files`（`+236`）。
+这一组便利方法（偏移相对同一 impl 头）**分成两类，读代码时极易看错**：
+
+| 方法 | 偏移 | 走哪条路 | Local 模式下 |
+|------|------|---------|-------------|
+| `server_version` | `+171` | 直接 `match self` | 可用 |
+| `git_status_ext` / `repos_list` / `hook_registry` / `put_files` / `get_files` | `+185` / `+192` / `+195` / `+233` / `+236` | `dispatch`（双模） | 可用（`op.execute`） |
+| `workspace_info` / `git_status` / `begin_prompt` / `end_prompt` / `get_rewind_points` / `rewind_to` | `+166` / `+179` / `+199` / `+206` / `+213` / `+222` | **只调 `self.rpc(...)`** | **必失败**：`rpc` 转 `rpc_raw`，而 `rpc_raw` 对 `Self::Local` 直接返回 `HubError("rpc not available in local mode")` |
+
+也就是说：后六个名字看着像「WorkspaceOps 的通用门面」，实际是 **Proxy 专用**。会话内部要 rewind point 时走的是 `session` / `file_state_tracker` 直路，不经过这里——这也是为什么全库搜不到 Local 侧对它们的调用点。**新增门面时选 `dispatch` 还是 `rpc`，决定它在本地模式下能不能用**。
 
 ### 步骤 2 — 类型化线契约 `WorkspaceRpc` / `WorkspaceOp`
 
 `crates/codegen/xai-grok-workspace-types/src/rpc/mod.rs`：
 
 ```rust
-pub enum RpcActivityClass { Mutation, Read }      // 定义在第 44 行
+pub enum RpcActivityClass { Mutation, Read }      // 顶层类型，定义行即 +0
 
-pub trait WorkspaceRpc: Serialize {               // 定义在第 53 行
+pub trait WorkspaceRpc: Serialize {               // 同文件紧邻其后的顶层 trait
     const METHOD: &'static str;
     const ACTIVITY: RpcActivityClass;
     type Response: Serialize + DeserializeOwned + Send;
@@ -190,7 +202,7 @@ pub trait WorkspaceRpc: Serialize {               // 定义在第 53 行
 
 ```rust
 #[async_trait]
-pub trait WorkspaceOp: WorkspaceRpc + DeserializeOwned + Send + Sync {   // 定义在第 93 行
+pub trait WorkspaceOp: WorkspaceRpc + DeserializeOwned + Send + Sync {   // 顶层 trait，定义行即 +0
     async fn execute(&self, ws: &WorkspaceHandle, session_id: Option<&str>)
         -> WorkspaceResult<Self::Response>;
 }
@@ -199,78 +211,79 @@ pub trait WorkspaceOp: WorkspaceRpc + DeserializeOwned + Send + Sync {   // 定�
 三件配套机制值得单独点出：
 
 1. **`ACTIVITY` 无默认值**是刻意的：源码注释写明「No default, so every method is classified explicitly」——每个操作必须自己声明它是 `Mutation`（算人类活动，空闲休眠时不能休眠）还是 `Read`（读、轮询、非活动型写，永不计入），不能靠默认值蒙混。这直接喂给 activity tracker 与 idle-hibernation。
-2. **`workspace_rpc!` 宏**（同文件偏移 `+80`）给那些「响应类型引用了 crate 内部类型、没法放进 types crate」的请求补实现。
-3. **`dispatch<Op: WorkspaceOp>`**（`impl WorkspaceOps` 偏移 `+151`）是统一入口：Local 直接 `op.execute(handle, session_id)`；Proxy 走 `rpc(op)`。另有两个更底层的口子：`rpc_raw`（`+125`）与 `rpc<R: WorkspaceRpc>`（`+139`，私有）。
+2. **`macro_rules! workspace_rpc`**（定义在 `crates/codegen/xai-grok-workspace/src/workspace_ops.rs`，**不在 types crate**）给那些「响应类型引用了 crate 内部类型、没法放进 types crate」的请求补 `WorkspaceRpc` 实现。**全库目前只有 1 处调用**（同文件，替 `PrepareWorktreeFromWorktreeReq` 补上）——它是逃生门，不是常规写法。
+3. **`dispatch<Op: WorkspaceOp>`**（`impl WorkspaceOps` 偏移 `+151`）是统一入口：Local 直接 `op.execute(handle, session_id)`；Proxy 走 `rpc(op)`。另有两个更底层的口子：`rpc_raw`（`+125`）与 `rpc<R: WorkspaceRpc>`（`+139`，私有）。**注意约束在类型参数上**：`dispatch` 收 `Op: WorkspaceOp`（必须有本地 `execute()`），`rpc` 只收 `R: WorkspaceRpc` ⇒ 只实现 `WorkspaceRpc` 的请求**结构上就进不了双模入口**，只能走 proxy。
 
-已实现的 `WorkspaceOp` 覆盖了本章全部关注面（按源码顺序）：Git 全族（`GitStatusExtReq`、`GitFilesReq`、`GitDiffReq`、`GitStageReq`、`GitStageContentReq`、`GitUnstageReq`、`GitDiscardReq`、`GitCommitReq`、`GitSyncBaseReq`、`GitCheckoutReq`、`GitEnsureBindingReq`、`GitMergeToMainReq`、`GitPushReq`、`GitStashReq`、`GitInfoReq`、`GitBranchesReq`、`GitCollectChangesReq`、`GitResolveRootReq`、`GitCurrentCommitReq`、`DetectVcsKindReq`、`GitCheckoutCommitReq`）、worktree 族、hunk 族（`HunkSingleActionReq` … `HunkGetFileSummariesReq`）、搜索族（`FuzzyOpenReq` / `FuzzyChangeReq` / `FuzzyCloseReq` / `ContentSearchRequest`）、code-nav 族、`PutFilesReq` / `GetFilesReq`、客户端文件系统族（`ClientFsListReq` / `ClientFsStatReq` / `ClientFsReadFileReq`）、`HookRegistryReq`、`StoreSessionImageReq`、`GetRewindPointsReq`（偏移 `+135` 附近，`METHOD = "workspace.get_rewind_points"`）、`ExportGithubReq`（`+103` 附近）。
+`WorkspaceRpc` 有 **100** 个实现、`WorkspaceOp` 只有 **69** 个 ⇒ 31 个请求**只能在 hub 侧被服务、Local 没有 `execute()`**（`GitStatusReq`、`WorkspaceInfoReq`、`BeginPromptReq` / `EndPromptReq`、`GetRewindPointsReq` / `RewindToReq`、`LoadPermissionsReq`、`LoadProjectConfigReq`、`FuzzyStatusReq`、`DropSessionReq`、`ToolDefinitionsReq`、`ListTodosReq`、`KillTaskReq`、`InstallPluginReq` / `RefreshPluginsReq` / `DiscoverPluginsReq` / `DiscoverSkillsReq` / `DiscoverAgentsMdReq`、`ConfigureMcpReq`、`UpdateToolConfigReq`、`ResolveFileReferencesReq`、`WorktreeCreateSyncReq`、`GitBranchInfoReq`、`GitMetadataReq`、`EchoReq` 与测试用的 `ErrReq` / `MalformedReq` / `PresenceNoteReq` / `TasksSnapshotReq` / `ListBackgroundTasksReq`）。要复算这张差分表：分别 `grep -rho "impl WorkspaceRpc for \w*"` 与 `grep -rho "impl WorkspaceOp for \w*"` 取集合并求差。
 
 ### 步骤 3 — `WorkspaceHandle` 与本地连接
 
-`Struct：WorkspaceHandle`（`crates/codegen/xai-grok-workspace/src/handle.rs`）是 Local 模式的真实主体，内部只有 `shared: Arc<WorkspaceShared>`。关键成员（偏移相对 `impl WorkspaceHandle` 头 `+437`，注意该 impl 之外还有若干 `cfg` 分段的 impl）：
+`Struct：WorkspaceHandle`（`crates/codegen/xai-grok-workspace/src/handle.rs`，顶层符号）是 Local 模式的真实主体，内部只有 `shared: Arc<WorkspaceShared>`。**它的方法不在一个 impl 块里**：下表偏移全部相对**主 `impl WorkspaceHandle`**（其头记作 `+0`）；文件更靠后还有三个独立块——`create_local_harness`（把会话的 `FinalizedToolset` 包成 `ToolHarness::local_only_with(...)`，**不连 hub**）、`new_minimal`（本地模式的最小句柄）、以及一个 `#[cfg(any(test, feature = "test-support"))]` 块（`for_test*`）。把偏移算进这三块里的任意一块都会查错地方。关键成员：
 
 | 成员 | 偏移 | 说明 |
 |------|------|------|
 | `trace_donation_reporter` / `log_donation_layer` / `metric_donation_reporter` | `+3` / `+19` / `+35` | 遥测/日志/指标上贡通道 |
 | `new(config)` | `+48` | 构造（测试与本地模式走无队列路径） |
-| `shared()` / `activity_tracker()` | `+250` / `+253` | 共享态与活动追踪 |
-| `hub_server` / `hub_server_blocking` | `+257` / `+263` | Hub 服务端句柄 |
-| `create_session` / `create_session_with_cwd` / `create_session_with_config` | `+270` / `+277` / `+287` | 会话创建三档（均调 `resolve_session_toolset_for_host`，传入 `self.shared.host_kind`） |
-| `create_session_with_tracker` / `create_session_with_tracker_and_viewer_ctx` | `+324` / `+344` | 带 hunk tracker / viewer ctx（`bind_local_session` 用的就是后者） |
-| `canonical_root` / `resolve_service_path` | `+1241` / `+1254` | 路径规范化（`confine_*` 的底座） |
-| `on_before_turn` / `on_after_turn` / `compute_turn_injections` | `+786` / `+824` / `+875` | 回合边界钩子 |
-| `drain_upload_queue` / `two_phase_drain` | `+1024` / `+1077` | 上传队列排空（两阶段） |
-| `cancel_tool_call` / `cancel_all_tool_calls` | `+1183` / `+1193` | 取消 |
-| `on_session_ended` / `on_yolo_toggled` / `on_mcp_server_toggled` | `+1202` / `+1212` / `+1221` | 状态广播 |
-| `hook_registry` / `hook_load_errors` | `+1231` / `+1236` | 钩子注册表与加载错误 |
-| `confine_to_workspace_root` / `confine_to_root` | `+1425` / `+1441` | **路径越界拦截** |
-| `put_files` / `get_files` | `+1458` / `+1530` | 批量文件传输 |
-| `fuzzy_open` / `fuzzy_routing` / `fuzzy_poll` / `fuzzy_change` | `+1690` / `+1709` / `+1722` / `+1760` | 模糊查找 |
-| `session` / `session_ids` / `session_count` | `+2466` / `+2470` / `+2473` | 会话查询 |
-| `start_session_mcp_servers` / `reload_bind_mcp` / `stop_mcp_server` | `+2112` / `+2192` / `+2231` | 会话级 MCP 生命周期 |
-| `drop_session_with_teardown` / `teardown_session_mcp` | `+2364` / `+2376` | 会话拆除 |
-| `drop_session` / `drop_session_if_bound` / `replace_session_toolset_if_mapped` | `+2633` / `+2642` / `+2666` | 会话与 toolset 绑定管理 |
-| `connect_hub` / `shutdown_hub` | `+3240` / `+3630` | Hub 连接生命周期 |
+| `shared()` / `activity_tracker()` | `+251` / `+254` | 共享态与活动追踪 |
+| `hub_server` / `hub_server_blocking` | `+258` / `+264` | Hub 服务端句柄 |
+| `create_session` / `create_session_with_cwd` / `create_session_with_config` | `+276` / `+283` / `+293` | 会话创建三档（均调 `resolve_session_toolset_for_host`，传入 `self.shared.host_kind`） |
+| `create_session_with_tracker` / `create_session_with_tracker_and_viewer_ctx` | `+354` / `+374` | 带 hunk tracker / viewer ctx（`bind_local_session` 用的就是后者） |
+| `on_before_turn` / `on_after_turn` / `compute_turn_injections` | `+822` / `+860` / `+911` | 回合边界钩子 |
+| `drain_upload_queue` / `two_phase_drain` | `+1060` / `+1113` | 上传队列排空（两阶段） |
+| `cancel_tool_call` / `cancel_all_tool_calls` | `+1219` / `+1229` | 取消 |
+| `on_session_ended` / `on_yolo_toggled` / `on_mcp_server_toggled` | `+1238` / `+1253` / `+1262` | 状态广播 |
+| `hook_registry` / `hook_load_errors` | `+1272` / `+1277` | 钩子注册表与加载错误 |
+| `canonical_root` / `resolve_service_path` | `+1282` / `+1295` | 路径规范化（`confine_*` 的底座） |
+| `confine_to_workspace_root` / `confine_to_root` | `+1466` / `+1482` | **路径越界拦截** |
+| `put_files` / `get_files` | `+1499` / `+1571` | 批量文件传输 |
+| `fuzzy_open` / `fuzzy_routing` / `fuzzy_poll` / `fuzzy_change` | `+1731` / `+1750` / `+1763` / `+1801` | 模糊查找 |
+| `start_session_mcp_servers` / `reload_bind_mcp` / `stop_mcp_server` | `+2153` / `+2233` / `+2272` | 会话级 MCP 生命周期 |
+| `drop_session_with_teardown` / `teardown_session_mcp` | `+2405` / `+2417` | 会话拆除 |
+| `session` / `session_ids` / `session_count` | `+2507` / `+2511` / `+2514` | 会话查询 |
+| `drop_session` / `drop_session_if_bound` / `replace_session_toolset_if_mapped` | `+2675` / `+2684` / `+2708` | 会话与 toolset 绑定管理 |
+| `connect_hub` / `shutdown_hub` | `+3398` / `+3789` | Hub 连接生命周期 |
 
 `confine_to_workspace_root` / `confine_to_root` 的实际逻辑：若 `self.shared.confine_fs_to_workspace_root` 为假，原样返回 `(path, None)`；否则取 `canonical_root()`，用 `resolve_service_path`（或 `resolve_path_within_root`）把路径钉回根内，返回 `(confined, Some(canonical_root))`。**这就是「路径校验只集中在两处」的落点。**
 
-顶层项（以下为顶层符号，按记法只给名字；括号内行号仅作快照辅助）：`Enum：SwapOutcome`（`pub(crate)`，第 407 行）、`Enum：DrainReason`（第 4158 行）、`Enum：DrainOutcome`（第 4167 行）、`函数：termination_grace_from_env`（第 4221 行）、`Struct：LocalWorkspaceConnectOptions`（第 4300 行）、`函数：connect_local_workspace`（第 4335 行）、`函数：resolve_workspace_home`（第 4511 行）。
+顶层项（均为顶层符号，按记法只给名字）：`Enum：SwapOutcome`（`pub(crate)`）、`Enum：DrainReason`、`Enum：DrainOutcome`、`函数：termination_grace_from_env`、`Struct：LocalWorkspaceConnectOptions`、`函数：connect_local_workspace`、`函数：resolve_workspace_home`；要落点就跑 `python3 .progress/sr_tools.py offset crates/codegen/xai-grok-workspace/src/handle.rs <符号>`。
 
 `connect_local_workspace` 是本地模式的唯一入口，注释明确了两条边界：它负责解析 `$GROK_WORKSPACE_HOME`（其它路径绝不碰真实 grok home），并把上传队列接上（无法上传的宿主走无队列路径）。
 
-`Struct：SessionToolHandle`（私有，偏移 `+4801`；`impl xai_tool_runtime::ToolDyn for SessionToolHandle` 偏移 `+4834`）是把「会话内的一个工具」暴露成 `ToolDyn` 的适配器——Hub 侧要用它把本地工具注册进 `LocalRegistry`。
+`Struct：SessionToolHandle`（`pub(crate)` 之下、私有顶层符号；其 `impl xai_tool_runtime::ToolDyn for SessionToolHandle` 也自成一块，`#[async_trait]` 上挂着 `id` / `description` / `execute`）是把「会话内的一个工具」暴露成 `ToolDyn` 的适配器——Hub 侧要用它把本地工具注册进 `LocalRegistry`。
 
 ### 步骤 4 — 权限双层：第一层（配置规则）
 
-配置层数据结构全在 `crates/codegen/xai-grok-workspace/src/permission/types.rs`：
+配置层数据结构住在**规则引擎那一半**：`crates/codegen/xai-grok-permission-rules/src/types.rs`（workspace 侧的 `permission/types.rs` 只是 glob 重导出它，见 4.3）：
 
 - `Struct：PermissionConfig` = `Vec<PermissionRule>` 容器。
 - `Struct：PermissionRule` 描述一条规则：`Enum：PatternMode` 决定匹配方式，`Enum：RuleAction` 是 `Allow`/`Deny`/`Ask` 三类，`Struct：ToolFilter` 限定作用的工具。
 - `Struct：EditPolicy` 控制「写文件」策略（自定义 serde，接受 ask/allow/reject 三种字面量）；`Struct：PromptPolicy` 控制「何时弹 prompt」。
 - `Enum：RequirementSource` + `Struct：Sourced<T>` 记录每条规则来自哪一层配置（用户/托管/MDM），用于合并优先级。
 
-（以上均为顶层符号，按记法只给名字；具体定义行见 4.3 的「定义行（快照）」表。）
+（以上均为顶层符号，按记法只给名字；它们与运行时那一半的分表见 4.3。）
 
-编译后的求值器是 `Struct：CompiledPolicy`（`permission/policy.rs` 偏移 `+74`）。它的方法面（偏移相对 `impl CompiledPolicy` 头 `+90`）：
+编译后的求值器是 `Struct：CompiledPolicy`（`crates/codegen/xai-grok-permission-rules/src/policy.rs · Struct：CompiledPolicy`）。它的方法面（偏移相对同文件的 `impl CompiledPolicy` 头，即 `+0`）：
 
 | 方法 | 偏移 | 作用 |
 |------|------|------|
 | `new(config)` | `+1` | 把配置编译成可求值形态 |
 | `evaluate_bash_command_policy(cmd)` | `+41` | 单条 bash 命令的规则求值（返回 `Decision`） |
-| `evaluate_bash_command_gate(cmd)` | `+48` | 同上但保留 `GateDecision` 溯源 |
+| `evaluate_bash_command_gate(cmd)` | `+48` | 同上但保留 `GateDecision` 溯源（`pub(crate)`） |
 | `evaluate(access)` | `+119` | 无 cwd 上下文的求值 |
 | `evaluate_with_cwd(access, cwd)` | `+125` | 带 cwd 的求值（路径规则依赖它） |
-| `evaluate_with_cwd_details(access, cwd)` | `+130` | 返回 `(Option<Decision>, native_symlink_fail_closed)` |
-| `narrow_allow_authorizes(access)` | `+235` | 判断一条窄 Allow 是否足以授权该访问 |
+| `evaluate_with_cwd_details(access, cwd)` | `+130` | 返回 `(Option<Decision>, native_symlink_fail_closed)`（`pub(crate)`） |
+| `evaluate_rules_with_base(...)` | `+177` | 上面几个求值入口共用的内核（`pub(crate)`） |
+| `narrow_allow_authorizes(access)` | `+243` | 判断一条窄 Allow 是否足以授权该访问 |
 
-同文件还导出三个 bash 模式工具函数（顶层）：`函数：bash_glob_is_catchall`、`函数：bash_pattern_matches_command`、`函数：bash_pattern_is_broad`——它们决定「用户勾选的这条 bash 规则是不是等于放行一切」，这是防止「always allow」变成「always allow everything」的关键守卫。合并逻辑是 `pub(crate) 函数：combine_decisions`（优先级 deny > ask > allow）与 `pub(crate) 函数：combine_gate_decisions`。
+同文件还导出三个 bash 模式工具函数（顶层）：`函数：bash_glob_is_catchall`、`函数：bash_pattern_matches_command`、`函数：bash_pattern_is_broad`——它们决定「用户勾选的这条 bash 规则是不是等于放行一切」，这是防止「always allow」变成「always allow everything」的关键守卫。合并逻辑是 `pub(crate) 函数：combine_decisions`（优先级 deny > ask > allow）与 `pub(crate) 函数：combine_gate_decisions`；后者定义在 `impl CompiledPolicy` **之前**，所以不能用「impl 头 +N」指它，直接按名字定位。
 
-`evaluate_shell_file_access_gate` 在本版**搬到了 `permission/shell_access.rs`**（`impl CompiledPolicy` 偏移 `+9`，impl 头在第 19 行；其公开包装 `evaluate_shell_file_access` 偏移 `+2`），内部用 tree-sitter 解析 shell AST 逐条判定读/写操作数。
+`evaluate_shell_file_access_gate` 在同 crate 的 `xai-grok-permission-rules/src/shell_access.rs`（`impl CompiledPolicy` 偏移 `+9`，其公开包装 `evaluate_shell_file_access` 偏移 `+2`——两者都在该文件里为 `CompiledPolicy` **追加**的一个 `impl` 块内，这是 Rust 的分形扩展：impl 可以离开类型定义所在文件）。内部用 tree-sitter 解析 shell AST 逐条判定读/写操作数。
 
 **语义**：规则命中 `Deny` 立即拒绝；命中 `Allow`（且范围匹配）直接进入第二层；都没命中 = **fail-closed → Ask**。
 
 ### 步骤 5 — 权限双层：第二层（运行时授权）
 
-运行时层由 `Enum：PermissionHandle`（`crates/codegen/xai-grok-workspace/src/permission/manager/mod.rs`，定义在 67 行）承载，**它不是一个 struct 而是一个 enum**：
+运行时层由 `Enum：PermissionHandle`（`crates/codegen/xai-grok-workspace/src/permission/manager/mod.rs`，顶层符号，定义行即 +0）承载，**它不是一个 struct 而是一个 enum**：
 
 ```rust
 pub enum PermissionHandle {
@@ -283,7 +296,7 @@ pub enum PermissionHandle {
 }
 ```
 
-`AllowAll`（构造器 `allow_all`，`impl PermissionHandle` 偏移 `+1`，impl 头在 90 行）是旁路变体：`request` 直接返回 `Allow`，**并且会丢弃钩子提出的 ask**（只记一条 debug 日志「this permission handle cannot prompt」）——这是「无头/受信任宿主」的显式开关，不是默认。
+`AllowAll`（构造器 `allow_all`，相对 `impl PermissionHandle` 头 `+1`）是旁路变体：`request` 直接返回 `Allow`，**并且会丢弃钩子提出的 ask**（只记一条 debug 日志「this permission handle cannot prompt」）——这是「无头/受信任宿主」的显式开关，不是默认。
 
 `Actor` 变体的对外 API（偏移相对 `impl PermissionHandle` 头 `+0`）：
 
@@ -324,7 +337,7 @@ actor 循环里 `PermissionCommand::Request` 分支的实际步骤（这是本�
 
 ### 步骤 6 — `GatePreflight` 把两层结论合并
 
-`Struct：GatePreflight`（`crates/codegen/xai-grok-workspace/src/permission/gate_preflight.rs`，第 15 行）的字段本身就把「三个来源」显式化了：
+`Struct：GatePreflight`（`crates/codegen/xai-grok-permission-rules/src/gate_preflight.rs`，顶层符号）的字段本身就把「三个来源」显式化了：
 
 ```rust
 pub struct GatePreflight {
@@ -342,7 +355,7 @@ pub struct GatePreflight {
 - `fail_closed_ask` = 「分析无法拆解命令，fail-closed 兜底的 Ask」（任一为 `AskFailClosed`）；
 - `defers_gate_ask = auto_mode && fail_closed_ask && !rule_match_ask`。
 
-其余方法（偏移相对 `impl GatePreflight` 头 `+26`）：`policy_decision()`（`+37`，把三个来源按 **deny > ask > allow** 合并，内部调 `combine_decisions`）、`policy_forced_prompt()`（`+46`，`pub(crate)`）、`shell_forced_prompt()`（`+51`，bash 门 Ask 或 shell-file Ask 或 native symlink fail-closed 三者任一）、`shell_file_forced_prompt()`（`+58`，`pub(crate)`）、`admits_auto_classifier()`（`+63`）、`defers_gate_ask()`（`+69`）、`prompt_trigger(auto_prompt_reason)`（`+75`，返回 `reasons::POLICY_ASK` / `reasons::BASH_COMMAND_GATE_ASK` / `reasons::SHELL_FILE_GATE_ASK`）。
+其余方法（偏移相对 `impl GatePreflight` 头 `+26`）：`policy_decision()`（`+37`，把三个来源按 **deny > ask > allow** 合并，内部调 `combine_decisions`）、`policy_forced_prompt()`（`+46`，`pub(crate)`）、`shell_forced_prompt()`（`+51`，bash 门 Ask 或 shell-file Ask 或 native symlink fail-closed 三者任一）、`shell_file_forced_prompt()`（`+58`，`pub(crate)`）、`admits_auto_classifier()`（`+63`，「根本没有 Ask」或「可推给分类器的 fail-closed Ask」二者之一为真）、`classifier_allowed_decision()`（`+69`，**分类器已经 Allow 之后**取规则结论：只有 `None`/`Allow` 才算放行，`Ask`/`Reject`/`PolicyDeny`/`FollowupMessage`/`Cancelled` 一律原样返回，fail-closed 的 Ask 也算）、`defers_gate_ask()`（`+84`，读那个预计算好的布尔）、`prompt_trigger(auto_prompt_reason)`（`+90`，返回 `reasons::POLICY_ASK` / `reasons::BASH_COMMAND_GATE_ASK` / `reasons::SHELL_FILE_GATE_ASK`；**当 bash floor 或 plain `needs_user` 抢走了 reason 时返回 `None`**）。
 
 设计意图（模块文档原文）：**「一次性评估 + 保留 provenance」，让 manager 能区分两种 Ask，而不是在每个决策点并行比对一堆布尔值**。`exec_risk.rs`（命令执行风险分析）与 `bash_command_splitting.rs`（命令拆分，含 tree-sitter 的 `try_parse_shell`）是那两道 bash 安全门的具体实现。
 
@@ -387,12 +400,12 @@ flowchart TD
 
 实现面：
 
-- `Enum：ToolApprovalGate`（第 61 行）= `Enforced` / `Off`，`函数：approval_gate_for(host_kind)`（第 71 行）转发给私有的 `函数：resolve_gate(host_kind, hitl_opt_in)`（第 75 行）。
-  **当前语义（相对旧文档已反转）**：`let enforced = match host_kind { Daemon => false, Sandbox => hitl_opt_in };`。也就是说 **Daemon 宿主当前是 `Off`**（源码注释写明这是 pre-release stopgap：「the daemon runs every hub tool call unasked (no permission cards) until sandboxing lands」），**Sandbox 宿主才看 `GROK_HITL_PERMISSION_LIVE`**。`Const：HITL_PERMISSION_LIVE_ENV = "GROK_HITL_PERMISSION_LIVE"`（`permission/hub_permission.rs`，第 45 行）与 `函数：hitl_permission_live_enabled`（第 47 行）是那个 opt-in 开关。
-- `函数：requires_approval(access)`（第 89 行，私有）：`Read` / `Grep` / `WebSearch` 返回 `false`；`Bash` / `Edit` / `MCPTool` / `WebFetch` / `AgentMessage` / `Tool` 返回 `true`。源码注释点明 `web_fetch` 也要问的理由：「an outbound fetch is an exfiltration channel」。
-- `Struct：SessionApproval`（`pub(crate)`，字段 `policy: parking_lot::Mutex<ToolApprovalPolicy>` 与 `grants: tokio::sync::Mutex<Option<FolderGrants>>`，后者「Held across the prompt, so a session answers one card at a time」）与 `Struct：FolderGrants`（字段 `cwd` / `grant_dir` / `store` / `state` / `allow_edits_for_session`）。`impl FolderGrants`（第 133 行）有 `load(cwd, served_root)`（偏移 `+1`）、`pre_decision(...)`（`+14`）、`record(...)`（`+63`）。`grant_dir` 是授权存储的键：绑定的 cwd 若只是被服务目录下的无仓库目录，就用被服务的目录做键（否则 Grok Desktop 里每个对话一个 scratch 目录会让「always」只对一次对话生效）；cwd 在仓库内时仍用仓库根做键，CLI 的按项目授权因此不变。
-- 可观测：`static DECISION_TOTAL: IntCounterVec`（第 30 行）带 7 个固定标签值 `DECISIONS = ["undecodable", "grant_allow", "grant_deny", "no_transport", "prompt_allow", "prompt_deny", "prompt_redirect"]`（第 37 行）。**这 7 个标签就是这套审批门的完整决策面**——包括「没有传输通道可用」（`no_transport`）与「重定向到别处问」（`prompt_redirect`）。
-- 传输面：`Trait：PermissionHookTransport`（`permission/hub_permission.rs`，第 52 行）、`Struct：ToolServerPermissionTransport`（第 56 行，实现该 trait 于第 77 行）、`函数：prompt_outcome_allows`（第 234 行）、`函数：request_permission_via_hub`（第 248 行）。
+- `Enum：ToolApprovalGate`（`hub_gate.rs · Enum：ToolApprovalGate`）= `Enforced` / `Off`；`函数：approval_gate_for(host_kind)`（同文件 `· approval_gate_for`）只是把 `hitl_permission_live_enabled()` 的结果一并传给私有的 `函数：resolve_gate(host_kind, hitl_opt_in)`。
+  **当前语义**：`let enforced = match host_kind { Daemon => false, Sandbox => hitl_opt_in };`。也就是说 **Daemon 宿主当前是 `Off`**（源码注释写明这是 pre-release stopgap：「the daemon runs every hub tool call unasked (no permission cards) until sandboxing lands」），**Sandbox 宿主才看 `GROK_HITL_PERMISSION_LIVE`**。注意 `WorkspaceHostKind` 在这条 match 里**只有 `Daemon` 与 `Sandbox` 两个臂**——它没有 `Local` 变体，也不参与命令级沙箱的分层（那条轴是 `SandboxMode` × 有没有可用后端，见第 17 篇）。`Const：HITL_PERMISSION_LIVE_ENV = "GROK_HITL_PERMISSION_LIVE"`（`permission/hub_permission.rs · Const：HITL_PERMISSION_LIVE_ENV`）与 `函数：hitl_permission_live_enabled`（同文件，紧接其后）是那个 opt-in 开关。
+- `函数：requires_approval(access)`（`hub_gate.rs · requires_approval`，私有）：`Read` / `Grep` / `WebSearch` 返回 `false`；`Bash` / `Edit` / `MCPTool` / `WebFetch` / `AgentMessage` / `Tool` 返回 `true`。其定义上方的 doc 注释点明准入原则与 `web_fetch` 的理由：「Only a tool that reads state, or touches nothing but the session's own bookkeeping, runs unasked. `web_fetch` prompts: an outbound fetch is an exfiltration channel.」
+- `Struct：SessionApproval`（`pub(crate)`，字段 `policy: parking_lot::Mutex<ToolApprovalPolicy>` 与 `grants: tokio::sync::Mutex<Option<FolderGrants>>`，后者「Held across the prompt, so a session answers one card at a time」）与 `Struct：FolderGrants`（字段 `cwd` / `grant_dir` / `store` / `state` / `allow_edits_for_session`）。`impl FolderGrants` 有 `load(cwd, served_root)`（`+1`）、`pre_decision(...)`、`record(...)`——**用 `sr_tools.py offset hub_gate.rs load` 实时取定义行与合法偏移上界，别信本文任何行号**。`grant_dir` 是授权存储的键：绑定的 cwd 若只是被服务目录下的无仓库目录，就用被服务的目录做键（否则 Grok Desktop 里每个对话一个 scratch 目录会让「always」只对一次对话生效）；cwd 在仓库内时仍用仓库根做键，CLI 的按项目授权因此不变。
+- 可观测：`static DECISION_TOTAL: LazyLock<IntCounterVec>`（`hub_gate.rs · static DECISION_TOTAL`）带 **8** 个固定标签值 `DECISIONS = ["undecodable", "grant_allow", "grant_deny", "sandbox_card", "no_transport", "prompt_allow", "prompt_deny", "prompt_redirect"]`（同文件 `· const DECISIONS`，数组长度写死在类型里 `[&str; 8]`，加一个就必须改长度——这是防漏的编译期护栏）。**这 8 个标签就是这套审批门的完整决策面**——包括「没有传输通道可用」（`no_transport`）、「重定向到别处问」（`prompt_redirect`），以及本轮新增的 **「沙箱卡」`sandbox_card`**：命令在沙箱里被拒后由策略层提出的那张卡（见 4.5 与第 17 篇），它和「事前弹窗」是两条不同的问路径。另有 `fn init_metrics()`（紧接 `DECISIONS` 之后）把这 8 个标签逐个预热，保证计数器从 0 起可见。
+- 传输面：`Trait：PermissionHookTransport`（`permission/hub_permission.rs · Trait：PermissionHookTransport`）、`Struct：ToolServerPermissionTransport`（同文件 `· struct ToolServerPermissionTransport`，`impl PermissionHookTransport for ToolServerPermissionTransport` 在其后）、`函数：prompt_outcome_allows`、`函数：request_permission_via_hub`（`async`）。
 
 ### 步骤 8 — OS 沙箱兜底
 
@@ -402,7 +415,7 @@ flowchart TD
 2. **进程自身的网络保持开放**——agent 要连 LLM API，封掉自己就没法工作了。
 3. 子进程网络**按子进程单独**用 seccomp 封禁。
 
-`Struct：SandboxManager`（第 161 行）与 `impl SandboxManager`（第 167 行）的成员（偏移相对该 impl 头 `+0`）：
+`Struct：SandboxManager`（顶层符号）的唯一 `impl SandboxManager` 块（其头记作 `+0`）成员：
 
 | 成员 | 偏移 | 说明 |
 |------|------|------|
@@ -416,7 +429,7 @@ flowchart TD
 | `profile()` | `+106` | 当前档位 |
 | `logger()` | `+110` | 违规事件日志器 |
 
-顶层开关与可观测函数（括号内为定义行快照）：`函数：requires_hook_write_deny`（第 53 行）、`is_inside_bwrap`（第 77 行）、`trust_bwrap_marker_for_devbox`（第 80 行）、`should_restrict_child_network`（第 96 行）、`should_auto_allow_bash`（第 102 行）、`set_auto_allow_bash`（第 105 行）、`set_configured_profile`（第 109 行）、`configured_profile_name`（第 113 行）、`requested_confinement_profile`（第 119 行）、`is_active`（第 127 行）、`profile_name`（第 131 行）、`log_violation`（第 138 行）、`flush`（第 149 行）、`metrics`（第 157 行）、`bwrap_reexec_command`（第 284 行）、`requires_read_deny`（第 442 行）、`requires_data_write_deny`（第 472 行）、`bwrap_reexec_for_profile`（第 614 行）。
+顶层开关与可观测函数（均为顶层符号，只给名字）：`函数：requires_hook_write_deny`、`函数：is_inside_bwrap`、`函数：trust_bwrap_marker_for_devbox`、`函数：should_restrict_child_network`、`函数：should_auto_allow_bash`、`函数：set_auto_allow_bash`、`函数：set_configured_profile`、`函数：configured_profile_name`、`函数：requested_confinement_profile`、`函数：is_active`、`函数：profile_name`、`函数：log_violation`、`函数：flush`、`函数：metrics`、`函数：bwrap_reexec_command`、`函数：requires_read_deny`、`函数：requires_data_write_deny`、`函数：bwrap_reexec_for_profile`。其中 `requires_read_deny` **有两份实现**（`#[cfg]` 二选一，非 enforce 档位那份是恒 `false` 的桩），按名字定位时注意会命中两条。
 
 **档位**（`crates/codegen/xai-grok-sandbox/src/profiles.rs`）：`Enum：ProfileName`（第 70 行）= `Workspace`（默认）/ `Devbox` / `ReadOnly` / `Strict` / `Off` / `Custom(String)`。第一段 `impl ProfileName`（第 80 行）提供 `restricts_network()`（偏移 `+1`，`pub(crate)`）、`Display`（第 86 行，输出 `workspace`/`devbox`/`read-only`/`strict`/`off`/自定义名）、`FromStr`（第 99 行，接受 `read-only`/`readonly`、`off`/`none` 等别名）。`Struct：SandboxProfile`（第 28 行）/ `ProfileConfig`（第 50 行）/ `SandboxConfig`（第 64 行）是配置形态；`函数：load_sandbox_config(workspace)`（第 117 行）**先读全局 `~/.grok/sandbox.toml`，再读项目 `<workspace>/.grok/sandbox.toml`，且项目层只能新增档位名**——合并走 `merge_project_profiles` 的 `entry(name).or_insert(profile)`，全局已定义的档位一律不被覆盖。`函数：sandbox_profile_conflicts`（第 135 行）与 `mismatched_profile_names` 负责把冲突报出来。这是一条重要的安全性质：项目配置不能悄悄放宽用户设定的沙箱。
 
@@ -537,61 +550,60 @@ flowchart TD
 
 **要点**：所有 Git / 文件 / hunk 请求都经 `WorkspaceClient`（Proxy）或 `WorkspaceHandle`（Local），绝不裸用 `std::fs` / `std::process::Command`——路径校验因此只集中在两处（`confine_to_workspace_root` / `confine_to_root`）。
 
-### 4.2 权限模块（`xai-grok-workspace/src/permission/`）全貌
+> **与第 [20](20-Git-Worktree快速铺设计与GC.md) 篇的分工**：这两行 `worktree*` 方法只是**宿主侧的调用入口**（谁发起、按什么会话生命周期持有）。worktree 本身怎么铺（CoW/reflink 并行克隆、Linux 上的 Btrfs/overlay 快照）、在哪个 SQLite 库里登记、GC 何时回收、NFS 上怎么特化，全部在[第 20 篇](20-Git-Worktree快速铺设计与GC.md)（`crates/codegen/xai-fast-worktree`）。本篇不重复那套机制。
 
-`mod.rs` 的模块声明与重导出拼出完整能力面。本版把多个模块收成私有（`mod`）后统一重导出：
+### 4.2 权限层全貌（**现在分两个 crate**）
 
-| 模块 / 导出 | 可见性 | 职责 |
-|------------|--------|------|
-| `auto_mode` | `pub` | auto 模式分类器编排；重导出 `AutoFastPath`、`BashSecurityAssessment`、`ClassifierContext` / `ClassifierFailure` / `ClassifierOutcome` / `ClassifierPromptType` / `ClassifierSecurityFinding` / `ClassifierSource` / `ClassifierSourceKind` / `ClassifierTurn` / `ClassifierVerdict`、`ClassifyTextChannel` / `ClassifyTextFn`、`FixedClassifier`、`HeuristicPermissionClassifier`、`LlmPermissionClassifier`、`PermissionClassifier`、`SharedClassifier`、`access_requires_user_interaction`、`auto_mode_fast_path`、`build_classifier_messages`、`classifier_output_json_schema`、`default_auto_mode_classifier`、`is_auto_mode_allowlisted_access` / `is_auto_mode_allowlisted_tool_name`、`parse_classifier_model_output` / `parse_classifier_model_text`、`permission_decision_args`、`AUTO_MODE_CLASSIFIER_SYSTEM_PROMPT`、`CLASSIFIER_TURN_MAX_LEN` |
-| `bash_command_splitting` | `pub` | bash 命令拆分（安全门之一，内部走 tree-sitter `try_parse_shell`） |
-| `bash_permission_script` | 私有 | 用户可插的 bash 权限脚本（内部用 tree-sitter） |
-| `claude_settings` | `pub` | 从 Claude 设置导入规则 |
-| `exec_risk` | 私有 | 命令执行风险分析（安全门之二） |
-| `gate_preflight` | 私有 | 重导出 `GatePreflight` |
-| `grants` | 私有 | 重导出 `always_allow_scope_persists`、`default_always_allow_scope`、`default_always_deny_scope`、`minimum_always_allow_scope` |
-| `hub_gate` | 私有 | 重导出 `ToolApprovalGate`、`approval_gate_for`；`pub(crate)` 导出 `SessionApproval`、`approve_hub_call` |
-| `hub_permission` | 私有 | 重导出 `PermissionHookTransport`、`ToolServerPermissionTransport`、`hitl_permission_live_enabled`、`prompt_outcome_allows`、`request_permission_via_hub` |
-| `managed_policy` | `pub` | 托管/MDM 策略 |
-| `manager` | 私有 | 重导出 `PermissionHandle`、`spawn_permission_manager*`、`AUTO_DENY_CONSECUTIVE_LIMIT`、`AUTO_DENY_TOTAL_LIMIT`、`PROMPT_POLICY_DENY_REASON`、`broad_allow_floor_requires_prompt` |
-| `policy` | 私有 | 重导出 `CompiledPolicy`、`bash_glob_is_catchall`、`bash_pattern_is_broad`、`bash_pattern_matches_command` |
-| `prompter` | 私有 | TUI 弹窗桥：`AcpPrompter`、`PromptOutcome` / `PromptOutcomeKind`、`BashCommandPermission` / `BashCommandSelectedTerms`、`McpScopeSelection` / `McpToolPermission`、`ALLOW_EDITS_SESSION_OPTION_ID`、`ENABLE_ALWAYS_APPROVE_OPTION_ID`、`is_enable_always_approve_option`、`mcp_pretty_name_if_qualified` / `mcp_titleize_segment` / `mcp_tool_action` / `mcp_tool_display_name`、`MCP_TOOL_NAME_DELIMITER`；`tool_name_for_access` 以 `prompter_tool_name_for_access` 名义重导出 |
-| `reasons` | `pub` | 决策原因常量（见 4.4） |
-| `resolution` | `pub` | 裁决结果处理 |
-| `rules` | `pub` | 规则构造与匹配 |
-| `shell_access` | 私有 | 重导出 `ProtectedEditPermission`、`ProtectedEditReason`（受保护文件的写保护）；`evaluate_shell_file_access_gate` 也在此 |
-| `state` | 私有 | 重导出 `PermissionState`、`cleanup_stale_permission_state` |
-| `types` | `pub` | 全部数据结构（见 4.3） |
+> 本节只解决「谁拥有什么、旧路径去哪找」。**规则引擎本身的机制不在这里展开**，见第 [18](18-权限规则引擎.md) 篇；逐条「旧文档写法 → 旧路径 → 新路径（正身）」的对照表在 [18 篇 §4.3](18-权限规则引擎.md)（本轮是**同名搬家、文件没改名**，所以按文件名 grep 会同时命中 workspace 的转发壳与 permission-rules 的正身，只有后者是定义）。
 
-同文件还有一个 `macro_rules! wire_enum!`（`pub(crate)`），为「变体 ↔ wire 字符串」成对定义生成 `ALL` 与 `wire_str`。
+这一层本轮被切成两半，读代码时最容易踩的坑就是「符号还能解析，但文件不是那个文件」：
 
-### 4.3 权限数据结构（`permission/types.rs`）
+- **规则引擎本体** → 新 crate `crates/codegen/xai-grok-permission-rules`（`src/lib.rs` 共 32 行：21 个 `pub mod` + 一个私有 `mod worktree` + `#[cfg(test)] mod test_support`；非测试 `.rs` **33 个**）。它的头注释就是拆分的理由：「The agent, the tools, and the session code stay out, so a small consumer can link the rules alone.」
+- **运行时装配面** → 留在 `crates/codegen/xai-grok-workspace/src/permission/`（`mod.rs` 共 119 行）。它 `use xai_grok_permission_rules::…` 再把名字**重导出**回原来的路径，所以 `crate::permission::policy::CompiledPolicy` 这类老写法依然能编译——**能解析不代表它住在这里**。
 
-| 类型 | 定义行（快照） | 含义 |
+`mod.rs` 里的三类声明要分开读（`grep -nE "^(pub )?(mod|use|pub use) " permission/mod.rs` 一遍就能对齐，别信任何一张表）：
+
+| `mod.rs` 里的声明形态 | 具体模块 | 含义 |
+|---|---|---|
+| **本地私有 `mod`**（真住在这里） | `grants`、`hub_gate`、`hub_permission`、`managed_hooks`、`manager`、`prompter`、`sandbox_gate`、`sandbox_network`、`sandbox_wire`、`state`、`types`、`auto_mode` | actor、弹窗桥、hub 审批门、沙箱卡接线、状态落盘——这些必须认识 daemon 的会话与传输，所以不能进规则引擎 crate |
+| **`pub use xai_grok_permission_rules::X`**（转发，不住这里） | `bash_command_splitting`、`bash_permission_script`、`claude_settings`、`exec_risk`、`gate_preflight`、`policy`、`reasons`、`rules`、`shell_access` | 纯规则/判定，消费方不需要 workspace ⇒ 已搬走。旧文档写 `xai-grok-workspace/src/permission/policy.rs`、`…/gate_preflight.rs`、`…/shell_access.rs`、`…/bash_*.rs` 的地方，**现在都在 `xai-grok-permission-rules/src/` 同名文件里** |
+| **本地「壳」模块里做二次转发** | `pub mod managed_policy { pub use crate::permission::managed_hooks::disabled_hooks_snapshot; pub use xai_grok_permission_rules::managed_policy::*; }`；`pub mod resolution { 同构 }` | 这两个面**不能直接把规则 crate 的名字挂上去**：workspace 侧要往同一个模块名里塞进自己的 `disabled_hooks_snapshot`（禁用钩子快照）。于是本地定义一个同名壳模块，先重导出本地那一项，再 glob 重导出规则 crate 的全部。读到的时候不要以为 `managed_policy` 有两份实现 |
+
+规则引擎侧的模块清单（`xai-grok-permission-rules/src/lib.rs` 逐条 `pub mod`）：`bash_command_splitting`、`bash_permission_script`、`claude_settings`、`domain`、`env_risk`、`exec_risk`、`folder_trust`、`gate_preflight`、`git_content_filters`、`managed_policy`、`policy`、`project_config`、`reasons`、`repo`、`resolution`、`rules`、`shell_access`、`source_identity`、`trust`、`types`、`util`（+ 私有 `worktree`）。其中 `domain`、`repo`、`source_identity`、`env_risk`、`worktree`、`git_content_filters`、`folder_trust`、`project_config`、`trust` 这一批在旧文档里要么标成 workspace 根下某文件、要么根本没出现过——**它们的共同职责是「一条规则是从哪个配置源来的、落在哪个仓库/目录上」的溯源面**，`reasons`（决策原因常量）与 `resolution`（裁决结果处理）都靠这套溯源来区分「用户配的 / 托管的 / MDM 的 / 钩子提的」。
+
+`mod.rs` 同文件还有一个 `macro_rules! wire_enum!`（`pub(crate)`），为「变体 ↔ wire 字符串」成对定义生成 `ALL` 与 `wire_str`。
+
+### 4.3 权限数据结构（**两张 `types.rs`**）
+
+现在有两个同名文件，旧文档把它们当一张表写，是本轮最容易读错的地方：
+
+| 类型 | 定义在 | 含义 |
 |------|------|------|
-| `Struct：PermissionEvent` | `+6` | 一次权限事件的记录（喂给 TUI/遥测） |
-| `Struct：PermissionResolution` | `+51` | 最终裁决结果（含 `decision` 与元数据） |
-| `Enum：ClientType` | `+56` | 调用方类型；`can_present_permission_prompt()`（`impl` 偏移 `+73`）决定它能不能弹窗（只有 `Generic` 不能） |
-| `Enum：AccessKind` | `+111` | 访问种类（`#[non_exhaustive]`）：`Read(Option<String>)` / `Grep{path,glob}` / `Edit(String)` / `Bash(String)` / `MCPTool{name,input}` / `WebFetch(String)` / `WebSearch(String)` / `AgentMessage{subagent_id}` / `Tool(String)`。**`Tool` 变体的源码注释值得记住**：它覆盖「既不是文件编辑、也不是命令、也不是 MCP 调用」的所有变更型工具（子 agent 派生、scheduler、workflow、生成、部署、反馈、浏览器……），且**没有任何 grant scope 覆盖它——每一次调用都必须弹窗**。 |
-| `Enum：Decision` | `+135` | 裁决：`Allow` / `Ask` / `FollowupMessage(String)` / `Reject(String)` / `PolicyDeny(String)` / `Cancelled` |
-| `Struct：EditPolicy` | `+144` | 写文件策略：`Ask`（默认）/ `Allow` / `Reject`，自定义 serde 只接受 `"ask"` / `"allow"` / `"reject"` 三个字面量 |
-| `Struct：RequestPathContext` | `+180` | 请求附带的路径上下文：`real_cwd` + `display_cwd: Option<PathBuf>` |
-| `Struct：HookAsk` | `+186` | 钩子提出的 ask：`hook_name` + `Option<String> reason`，含 `ask_line` / `prompt_header` / `strip_prompt_header`（`impl` 偏移 `+193`） |
-| `Const：HOOK_ASK_META_KEY = "hookAsk"` | `+191` | 把 `HookAsk` 带过 wire 的元数据键 |
-| `Struct：PermissionRequest` | `+215` | 一次授权请求（`access` / `tool_call_update` / `path_context` / `session_id` / `subagent_type` / `subagent_description` / `hook_ask`） |
-| `Enum：PermissionCommand` | `+238` | actor 命令：`Request` / `SetYoloMode` / `SetAutoMode` / `SetClassifier` / `SetClassifierTranscript` / `SetProjectInstructions` / `ResetState` / `Shutdown` |
-| `Struct：PermissionConfig` | `+369` | 规则容器 |
-| `Enum：PromptPolicy` | `+387` | 何时弹 prompt |
-| `Struct：PermissionRule` | `+395` | 单条规则 |
-| `Enum：PatternMode` | `+405` | 规则匹配模式 |
-| `Enum：RuleAction` | `+412` | `Allow` / `Deny` / `Ask` |
-| `Struct：ToolFilter` | `+421` | 规则作用的工具过滤 |
-| `Enum：RequirementSource` | `+435` | 规则来源（用户/托管/MDM） |
-| `Struct：Sourced<T>` | `+464` | 带来源标注的值（用于合并优先级） |
+| `Enum：AccessKind` | `xai-grok-permission-rules/src/types.rs` | 访问种类（`#[non_exhaustive]`）：`Read(Option<String>)` / `Grep{path,glob}` / `Edit(String)` / `Bash(String)` / `MCPTool{name,input}` / `WebFetch(String)` / `WebSearch(String)` / `AgentMessage{subagent_id}` / `Tool(String)`。**`Tool` 变体的源码注释值得记住**：它覆盖「既不是文件编辑、也不是命令、也不是 MCP 调用」的所有变更型工具（子 agent 派生、scheduler、workflow、生成、部署、反馈、浏览器……），且**没有任何 grant scope 覆盖它——每一次调用都必须弹窗**。 |
+| `Enum：Decision` | 同上 | 裁决：`Allow` / `Ask` / `FollowupMessage(String)` / `Reject(String)` / `PolicyDeny(String)` / `Cancelled` |
+| `Struct：EditPolicy` | 同上 | 写文件策略：`Ask`（默认）/ `Allow` / `Reject`，自定义 serde 只接受 `"ask"` / `"allow"` / `"reject"` 三个字面量 |
+| `Struct：PermissionConfig` | 同上 | 规则容器 |
+| `Enum：PromptPolicy` | 同上 | 何时弹 prompt |
+| `Struct：PermissionRule` | 同上 | 单条规则 |
+| `Enum：PatternMode` | 同上 | 规则匹配模式 |
+| `Enum：RuleAction` | 同上 | `Allow` / `Deny` / `Ask` |
+| `Struct：ToolFilter` | 同上 | 规则作用的工具过滤 |
+| `Enum：RequirementSource` | 同上 | 规则来源（用户/托管/MDM） |
+| `Struct：Sourced<T>` | 同上 | 带来源标注的值（用于合并优先级） |
+| `Struct：PermissionEvent` | `xai-grok-workspace/src/permission/types.rs` | 一次权限事件的记录（喂给 TUI/遥测） |
+| `Struct：PermissionResolution` | 同上 | 最终裁决结果（含 `decision` 与元数据） |
+| `Enum：ClientType` | 同上 | 调用方类型；`can_present_permission_prompt()`（定义在 `impl ClientType` 内，用 `offset` 实时取）决定它能不能弹窗（只有 `Generic` 不能） |
+| `Struct：RequestPathContext` | 同上 | 请求附带的路径上下文：`real_cwd` + `display_cwd: Option<PathBuf>` |
+| `Struct：HookAsk` | 同上 | 钩子提出的 ask：`hook_name` + `Option<String> reason`，含 `ask_line` / `prompt_header` / `strip_prompt_header` |
+| `Const：HOOK_ASK_META_KEY = "hookAsk"` | 同上 | 把 `HookAsk` 带过 wire 的元数据键 |
+| `Struct：PermissionRequest` | 同上 | 一次授权请求（`access` / `tool_call_update` / `path_context` / `session_id` / `subagent_type` / `subagent_description` / `hook_ask`） |
+| `Enum：PermissionCommand` | 同上 | actor 命令：`Request` / `SetYoloMode` / `SetAutoMode` / `SetClassifier` / `SetClassifierTranscript` / `SetProjectInstructions` / `ResetState` / `Shutdown` |
 
-另有 `impl From<&ToolInput> for AccessKind`（偏移 `+254`）：工具入参到访问种类的默认映射。其上的注释写明了准入原则：**分类是「只读工具的允许名单」——只有读状态或只碰会话自身记账的工具才映射为 `Read`/`Grep`/`WebSearch`，其余一律按 edit / command / MCP / fetch 处理，所以新增一个 `ToolInput` 变体不可能「默认不问就执行」**。
+两半怎么缝在一起：`xai-grok-workspace/src/permission/types.rs` 的第 5 行是 `pub use xai_grok_permission_rules::types::*;`——**规则引擎那一半被 glob 重导出**，所以 `crate::permission::types::AccessKind` 和 `xai_grok_permission_rules::types::AccessKind` 是同一个类型，不是两份定义。这张表因此不给行号，只给「符号 → 文件」映射；要落点就跑 `sr_tools.py offset <文件> <符号>`。
 
-> 与旧文档的差异：旧版写 `Decision` 只有 `Allow` / `Deny` / `Ask` 三种。当前源码是六种，新增 `FollowupMessage`（把决定权推回给用户追问）、`PolicyDeny`（策略性拒绝，与工具自己报错区分开）、`Cancelled`（请求方消失）。
+**`From<&ToolInput> for AccessKind` 这一半已经搬到工具侧**：它现在定义在 `crates/codegen/xai-grok-tools/src/permission_access.rs`（文件头就一句 `use xai_grok_permission_rules::types::AccessKind;`，紧接其后的 doc 注释才是准入原则：「Classification is an allowlist of read-only tools… a new `ToolInput` variant cannot run unasked」——注释在签名**上方**，不能用 `+N` 指它）。这个搬家是有语义含义的：**「工具入参怎么映射成访问种类」是工具侧的知识，不该留在规则引擎里**；规则引擎只认 `AccessKind` 这个 vocabulary。
+
+`auto_mode` 是本章里最大的一个本地模块（`permission/auto_mode/`），`mod.rs` 一次性重导出它的公开面：`AutoFastPath`、`BashSecurityAssessment`、`ClassifierContext` / `ClassifierFailure` / `ClassifierMessage` / `ClassifierMessageRole` / `ClassifierOutcome` / `ClassifierPromptType` / `ClassifierSecurityFinding` / `ClassifierSource` / `ClassifierSourceKind` / `ClassifierTurn` / `ClassifierVerdict`、`ClassifyTextChannel` / `ClassifyTextFn`、`FixedClassifier`、`HeuristicPermissionClassifier`、`LlmPermissionClassifier`、`PermissionClassifier`、`SharedClassifier`、`access_requires_user_interaction`、`auto_mode_fast_path`、`build_classifier_messages`、`classifier_output_json_schema`、`default_auto_mode_classifier`、`is_auto_mode_allowlisted_access` / `is_auto_mode_allowlisted_tool_name`、`parse_classifier_model_output` / `parse_classifier_model_text`、`permission_decision_args`、`AUTO_MODE_CLASSIFIER_SYSTEM_PROMPT`、`CLASSIFIER_TURN_MAX_LEN`。名单本身用 `grep -n "pub use auto_mode" permission/mod.rs` 现取，别抄本文。
 
 ### 4.4 三个「Ask」来源（配置 / 安全门 / 钩子）
 
@@ -605,7 +617,7 @@ flowchart TD
 
 三者在**同一个决策面**上呈现，但溯源不同。这是「双层」在工程上的落点：配置层给确定结论，分析层给 fail-closed 兜底，钩子层给用户可编程的插口，运行时层（auto/yolo/prompt）给最终裁决。
 
-`permission/reasons.rs` 是本版新增的**集中式原因常量表**（`pub const ALL: &[&str]` 列出全部 25 个），完整清单：`YOLO`、`POLICY_ALLOW`、`POLICY_DENY`、`POLICY_ASK`、`BASH_COMMAND_GATE_ASK`、`SHELL_FILE_GATE_ASK`、`AUTO_FAST_PATH`、`AUTO_CLASSIFIER_ALLOW`、`AUTO_CLASSIFIER_DENY`、`AUTO_CLASSIFIER_TIMEOUT`、`AUTO_CLASSIFIER_UNAVAILABLE`、`AUTO_DENIAL_LIMIT`、`SANDBOX_AUTO`、`PERSISTED_GRANT`、`SESSION_GRANT`、`STATIC_ALLOWLIST`、`SAFE_COMMAND`、`SESSION_DENY`、`PROMPT_DENY`、`PROMPT_ALLOW`、`NEEDS_USER`、`BASH_REQUEST_FLOOR`、`OPAQUE_SHELL`、`HOOK_ASK`、`REQUESTER_GONE`。每个决策都会带一个这样的 `decision_reason` 进 `PermissionEvent`。
+`crates/codegen/xai-grok-permission-rules/src/reasons.rs`（workspace 侧经 `pub use …::reasons` 转发）是**集中式原因常量表**（`pub const ALL: &[&str]` 列出全部 25 个），完整清单：`YOLO`、`POLICY_ALLOW`、`POLICY_DENY`、`POLICY_ASK`、`BASH_COMMAND_GATE_ASK`、`SHELL_FILE_GATE_ASK`、`AUTO_FAST_PATH`、`AUTO_CLASSIFIER_ALLOW`、`AUTO_CLASSIFIER_DENY`、`AUTO_CLASSIFIER_TIMEOUT`、`AUTO_CLASSIFIER_UNAVAILABLE`、`AUTO_DENIAL_LIMIT`、`SANDBOX_AUTO`、`PERSISTED_GRANT`、`SESSION_GRANT`、`STATIC_ALLOWLIST`、`SAFE_COMMAND`、`SESSION_DENY`、`PROMPT_DENY`、`PROMPT_ALLOW`、`NEEDS_USER`、`BASH_REQUEST_FLOOR`、`OPAQUE_SHELL`、`HOOK_ASK`、`REQUESTER_GONE`。每个决策都会带一个这样的 `decision_reason` 进 `PermissionEvent`。
 
 ### 4.5 OS 沙箱详解（`xai-grok-sandbox`）
 
@@ -679,6 +691,28 @@ pub fn apply(&mut self, workspace: &Path) -> anyhow::Result<()> {
 
 **路径策略**：允许/拒绝路径在 `paths.rs` / `allow_path.rs` / `deny/`（含 `hook_write_deny.rs`，禁止钩子写某些路径）。`runtime_sockets.rs` / `read_deny_verify.rs` / `network_policy.rs` 分别负责运行时会话 socket、读拒绝校验、网络策略快照；`Struct：SandboxEvent` / `SandboxEventType` / `SandboxMetrics`（`types.rs`）是可观测面。
 
+#### 4.5.1 边界：现在一共有三层沙箱，别把它们当成一个
+
+上面全部讲的是**第一层（进程级）**。本版它旁边多了两层，本章只划边界、不展开（展开在第 17 篇）：
+
+| 层 | 住在哪里 | 施加时机 | 粒度 | 不认识的东西 |
+|---|---|---|---|---|
+| ① 进程级 | `xai-grok-sandbox/src/lib.rs` · `Struct：SandboxManager`（本章 4.5 全文） | 进程启动一次，`apply()` → `install()` | 整个进程树共用一份粗 profile | 不认识「哪条命令」 |
+| ② 命令级策略 | `xai-grok-sandbox/src/command/`（`CMD/`，**本轮新增，37 个文件**） | **每次 spawn 前重新构建**一份策略，渲染成 OS 包装 | 每条命令一份 `SandboxPolicy` | **不认识 daemon**、永不为 daemon 套壳 |
+| ③ 宿主编排 | `xai-grok-workspace/src/sandbox/`（`WorkspaceSandbox`，每个 serve folder 一个实例）+ `xai-grok-workspace/src/permission/` 下的 `sandbox_gate.rs`、`sandbox_wire.rs`、`sandbox_network.rs` | 随调用进出：调用表、授权存储、卡片编解码、egress 代理生命周期 | 每个 (call, host, port) 一张卡 | 它**自己不 spawn 进程**，只实现 tools 侧的 `trait SandboxLaunch` |
+
+五条必须记住的分界事实（都在源码里有明文）：
+
+1. **②只有 macOS 后端**。`CMD/detect.rs` · `HostProbe::preferred_backend` 在非 macOS 返回 `BackendChoice::Unavailable`，理由字符串写明「v1 has Seatbelt on macos only」；`grep -rn -E 'bwrap|landlock|Landlock' crates/codegen/xai-grok-sandbox/src/command/` 零命中（**注意要用 `-E`**：macOS 的 BSD grep 在基本正则里不支持 `\|` 交替，写成 `'bwrap\|landlock'` 会得到假的零命中） ⇒ **Linux 上没有命令级强制**，Linux 仍只有①。
+2. **②包装失败 = 这条命令不跑**，绝不会静默裸跑；而①的 `apply` 失败是「降级继续」。两者的失败语义相反，不能类推。
+3. **③是工具侧唯一的接缝**。`xai-grok-tools/src/sandbox_launch.rs` 只定义 `trait SandboxLaunch{prepare, prepare_restoring, exited}` 并把 `SandboxPolicy`/`CallId`/`BackendName` 等类型从②重导出；tools 侧**不认识策略、授权与卡片语义**，那些全在③。所以「改了 command 层为什么 bash 行为没变」这类问题，答案通常在 `WS/sandbox/launch.rs` 与 `WS/permission/sandbox_gate.rs`，不在 `CMD/`。
+
+4. **②会顶掉权限层的「事前弹窗」**，这是两层在**产品语义**上唯一真正重叠的地方。`crates/codegen/xai-grok-workspace/src/permission/sandbox_gate.rs` · `符号：SandboxPath`（三态 `None`（非 shell 工具）/ `Shell`（shell 但事前弹窗照旧）/ `Gated`，由 `函数：for_tool(+0)` 判）取 `Gated` 时，`WS/hub.rs` 那条 match 会把这次调用改走「先放行、违规再回来要授权」的路径，**不再弹事前窗**；它有四个降级回 `Shell`（= 保留事前弹窗）的条件：不是 `ToolKind::Execute`、folder 不在 `enforce`、该 shell 工具的输出不是解码器读的那种、以及被要求后台运行。最后一处的判据是**白名单命名空间**（`函数：shell_output_is_decodable`），所以新接一种 shell 工具时它天然落在「没列出」= 保守侧。全集在 [17 篇 §4.6 坑 8](17-命令级沙箱策略层.md)。
+
+5. **命令级的分层轴不是宿主类型**。轴是 `SandboxMode` × `CMD/detect.rs` 的 `detect_backend()` 是否返回 `None`；`crates/codegen/xai-grok-workspace/src/host_kind.rs` · `符号：WorkspaceHostKind` **只有 `Sandbox` 与 `Daemon` 两个变体（没有 `Local`，`#[default]` 是 `Daemon`）**，它描述的是凭据/API 语义，在 `src/command/` 与宿主强制路径里 grep 不到以它为轴的分支（只有测试引用）。hub_gate 的宿主档位和命令级沙箱是两回事，混了会得出完全错误的结论。
+
+一句话记法：**①兜进程、②写策略、③接宿主**；本章讲①与权限的交叉，②③在第 17 篇。
+
 ### 4.6 授权状态持久化
 
 `crates/codegen/xai-grok-workspace/src/permission/state.rs`：
@@ -719,6 +753,38 @@ pub fn apply(&mut self, workspace: &Path) -> anyhow::Result<()> {
 8. **配置不可放宽**：项目级 `sandbox.toml` 只能新增档位，不能重定义全局档位（`merge_project_profiles` 用 `or_insert`）。
 9. **线程预算**：任何 gix 并行 status 都必须经 `with_budgeted_thread_limit`，上限 8，且绝不传 `Some(0)`。
 10. **记账与拦截分离**：`HunkTrackerHandle` 只记账不拦截；安全边界只由权限与沙箱承担。
+
+---
+
+## 变更记录
+
+### 基准 `HEAD = 42f4d7d3`（2026-10-27，`SOURCE_REV = 559751fd`；前次基准 `HEAD = 0e2bfffb` / `SOURCE_REV = 036a5d83`）
+
+**结构变化（影响本篇归属叙述的）**：
+
+1. **权限规则引擎拆成独立 crate**：`policy.rs`、`gate_preflight.rs`、`shell_access.rs`、`rules.rs`、`exec_risk.rs`、`bash_command_splitting.rs`、`bash_permission_script.rs`、`claude_settings.rs`、`reasons.rs`、`project_config.rs`、`git_content_filters.rs`、`managed_policy/`、`trust.rs`、`types.rs` 的**一半**都搬进了 `xai-grok-permission-rules`；`manager/`、`hub_gate.rs`、`sandbox_gate.rs`、`sandbox_wire.rs`、`sandbox_network.rs`、`grants/`、`prompter.rs`、`state.rs`、`auto_mode/`、`managed_hooks.rs` 留在 workspace。旧文档凡是把它们写成 `xai-grok-workspace/src/permission/…` 的地方都改了归属（不只是换路径——「谁认识谁」的叙述也跟着重写，见 4.2/4.3）。
+2. **沙箱从一个变成三层**（4.5.1）。旧文档只有 `SandboxManager` 一层，且用两个「`sandbox/src/lib.rs` 与 `child_net.rs` 上的绝对行号」当锚点（快照数字这里不再复述，它们已在当前源码里失去意义），已全部换成符号 + 偏移。
+3. **`hub_gate` 宿主档位语义反转**：旧文档写「Daemon 宿主永远强制审批、Sandbox 宿主需 `GROK_HITL_PERMISSION_LIVE`」，当前源码**正好相反**（`resolve_gate` 对 `Daemon` 返回 `false`，是 pre-release 过渡态）。
+4. **`DECISIONS` 从 7 个标签变成 8 个**（新增 `sandbox_card`），数组长度 `[&str; 8]` 是编译期护栏。
+
+**本篇内实质的更正（相对上一版内容，不只是记法）**：
+
+- `WorkspaceHandle` 方法表**整表重算**：主 `impl WorkspaceHandle` 之后还有 `create_local_harness`、`new_minimal` 与一个 `#[cfg(any(test, feature = "test-support"))]` 三个独立 impl 块（旧文档说「若干 cfg 分段的 impl」，不准确）；表内偏移全部按当前源码刷新（`connect_hub`/`shutdown_hub` 这类尾部方法旧值偏差达 150+）。
+- `GatePreflight` 漏了一个公开方法 `classifier_allowed_decision`（旧文档把它的行位给了 `defers_gate_ask`）；`defers_gate_ask`/`prompt_trigger` 的偏移也随之修正。
+- 新增「`dispatch` vs `rpc`」这条约束：`WorkspaceRpc` 有 100 个实现、`WorkspaceOp` 只有 69 个 ⇒ **31 个请求在 Local 模式下结构性不可用**，而 `WorkspaceOps` 的 `workspace_info`/`git_status`/`begin_prompt`/`end_prompt`/`get_rewind_points`/`rewind_to` 六个门面走的就是 proxy-only 的 `rpc`。
+- `bind_local_session` 的重试次数写清楚：循环 `for _ in 0..2` + 循环外再补一次 ⇒ 最多 3 次换绑尝试。
+- `MCP_TOOL_NAME_DELIMITER` 的正身是 `xai-grok-workspace-types/src/lib.rs`（`xai-grok-mcp/src/servers.rs` 与 `prompter.rs` 都是 `pub use` 它），旧文档给的行号已过期，改为符号定位。
+- `consume_stream_terminal`（workspace-client）定义行漂移，改为符号定位。
+- `sandbox/src/command/` 内**没有任何 Linux 后端**这一条写进 4.5.1（含正确的 `grep -E` 复核配方）。
+
+**记法**：本篇原有的「第 N 行」定义行快照经复核**仍然准确**的（`profiles.rs`、`request_classification.rs`、`bash_policy_allow.rs`、`child_net.rs`、`xai-gix-status`、`hunk-tracker`、`rpc/mod.rs` 常量表）保留；失效的（`handle.rs` 顶层项、`sandbox/lib.rs` 顶层函数表、`SessionToolHandle` 偏移）一律改成符号 + 偏移。
+
+**收口轮（2026-10-28，同一基准 `42f4d7d3`）**：4.1 的 worktree 两行（`create_worktree`…`worktree_db_stats`，`impl WorkspaceClient` 起算的 `+321…+366` 十个偏移）逐个回源码复核**全部命中**，无需改动；此前记录的「worktree 文件表过期」经全库检索确认本篇已无该表（`grep -n "worktree" 11-*.md` 仅 4 处，均为上面这两行与 4.2 的模块清单）。新增一条与[第 20 篇](20-Git-Worktree快速铺设计与GC.md)的分工说明（宿主入口 vs 铺设/登记/GC 本体），导航分母改 22。
+
+### 更早的基准
+
+- `HEAD = 0e2bfffb` / `SOURCE_REV = 036a5d83`（上一轮刷新）
+- `6c01b90c`、`2178c69c`、`cb8e30bd`：本轮之前各章头部标注互不一致，已统一。
 
 ---
 

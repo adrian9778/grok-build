@@ -1,12 +1,12 @@
-[上一篇：TUI交互循环与渲染](08-TUI交互循环与渲染.md) · [总目录](README.md) · [下一篇：工具协议与扩展体系](10-工具协议与扩展体系.md)
+[上一篇：TUI交互循环与渲染](08-TUI交互循环与渲染.md) · [总目录](README.md) · 第 9 / 22 篇 · [下一篇：工具协议与扩展体系](10-工具协议与扩展体系.md)
 
 # Agent 会话与模型循环：Session Actor 回合循环
 
-> **第 9 / 18 篇**
+> **第 9 / 22 篇**
 > **场景**：用户按回车后，一条 `SessionCommand::Prompt` 怎样走完「入队 → 建请求 → 采样 → 工具调用闭合 → 完成」。本文把 Session Actor 的回合循环写成可实现的伪代码与真实函数链。
-> **时间**：采样于 2026-09-23（CST），工作区 `HEAD = cb8e30bd`（main，`SOURCE_REV = 84745de9`）。
+> **时间**：采样于 2026-10-27（CST）· `HEAD = 42f4d7d3`（`SOURCE_REV = 559751fd`；前次 `0e2bfffb`）。
 > **本轮同步**（对比上一版文档）：§6 新增 §6.4 **图片字节预算**（`xai-chat-state/src/image_budget.rs`，触发线 ≈47 MiB）与 §6.5 **跨压缩图片链**（`compaction_image_context.rs`，`<image_files>` 文本契约）；§8 补充 `TaskToolInput` 扩展（`subagent_type` / `capability_mode` / `isolation` / `resume_from` / `workspace` / `task_id`）与 `PromptAudience::{Primary,Subagent}` 二阶分支。
-> 工具版本：Rust 1.94.0（rust-toolchain.toml:11）/ `ratatui 0.29`（`Cargo.toml:234`）/ `tokio full` / `agent-client-protocol 0.10.4`（`Cargo.toml:118`）。会话 `xai-grok-shell`，对话状态 `xai-chat-state`，采样 `xai-grok-sampler`，采样类型 `xai-grok-sampling-types`，压缩 `xai-grok-compaction`（common）+ `xai-compaction-transcript`。workspace members = **102**。
+> 工具版本：Rust 1.94.0（rust-toolchain.toml `[toolchain].channel`）/ `ratatui 0.29`（`Cargo.toml` `[workspace.dependencies].ratatui`）/ `tokio full` / `agent-client-protocol 0.10.4`（`Cargo.toml` `[workspace.dependencies].agent-client-protocol`）。会话 `xai-grok-shell`，对话状态 `xai-chat-state`，采样 `xai-grok-sampler`，采样类型 `xai-grok-sampling-types`，压缩 `xai-grok-compaction`（common）+ `xai-compaction-transcript`。workspace members = **107**。
 
 > **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。源码索引一律用「`文件路径` · `符号(+函数内相对偏移)`」，`+0` = 函数/定义所在行。核心不变量：会话是**单写者**（Session Actor），历史/工具结果/压缩不竞态。
 
@@ -245,7 +245,7 @@ async fn handle_turn_input_inner(self: &Arc<Self>, request: TurnInputRequest)
 >
 > 所以「解析 slash 命令」的判断应该看 `policy.slash`，而不是 `policy.authority`——旧文档把两件事混成一件，是错的。
 >
-> **`record_turn_start`**（`xai-chat-state/src/handle.rs:250`）在 `handle_turn_input_inner` 入口（`turn.rs:529`）和 `process_conversation_turn_with_recovery` 入口（`turn.rs:2629`）各调一次，发送 `ChatStateCommand::RecordTurnStart { timestamp_ms }`。它为 laziness detector / `x.ai/session/state` 通知提供 turn 级时间锚点。`turn_start_anchor_tests.rs` 验证：host turn（如 `/session-info`）会覆盖过期的 stale 锚点（11 小时前的旧时间戳被新 turn 覆盖），防止 timing 计算错误。
+> **`record_turn_start`**（`xai-chat-state/src/handle.rs` · `record_turn_start(+0)`）在 `xai-grok-shell/src/session/acp_session_impl/turn.rs` · `handle_turn_input_inner(+26)` 入口和 `xai-grok-shell/src/session/acp_session_impl/turn.rs` · `process_conversation_turn_inner(+24)` 入口（更正：旧文档此处写成 `process_conversation_turn_with_recovery`，调用点实际在 `process_conversation_turn_inner` 顶部）各调一次，发送 `ChatStateCommand::RecordTurnStart { timestamp_ms }`。它为 laziness detector / `x.ai/session/state` 通知提供 turn 级时间锚点。`turn_start_anchor_tests.rs` 验证：host turn（如 `/session-info`）会覆盖过期的 stale 锚点（11 小时前的旧时间戳被新 turn 覆盖），防止 timing 计算错误。
 >
 > **另一处旧文档不成立的说法**：`TurnBoundary::MidTurn` 在当前 HEAD **没有任何构造点**（`PromptOrigin::policy` 的 5 个分支全部写 `TurnBoundary::Conversational`；`xai-agent-lifecycle/src/send/registry.rs` 里唯一一处也写 `Conversational`），且 `InputPolicy.turn_boundary` 字段在整个树内**没有任何读取点**（全文搜索 `.turn_boundary` 无匹配）。因此「插话文本通常是 `HumanIntent` + `TurnBoundary::MidTurn`」这一旧结论**当前源码无法确认**；`turn_boundary` 目前是一个已声明但未被消费的维度。
 
@@ -602,20 +602,23 @@ token 预算管的是"模型看得懂多少"，但它没有直接约束发给 AP
 
 | 符号 | 位置 | 作用 |
 |---|---|---|
-| `MAX_REQUEST_BYTES` | `image_budget.rs:18` | 上游硬上限（`ApiBackend::ChatCompletions.default_max_request_bytes()`，≈50 MiB） |
-| `IMAGE_COMPACT_TRIGGER_BYTES` | `image_budget.rs:25` | 触发线 = `MAX_REQUEST_BYTES - 3 MiB`（约 47 MiB） |
-| `IMAGE_COMPACT_RECLAIM_TARGET_BYTES` | `image_budget.rs:30` | 回收目标（触发后驱逐到这个水位以下） |
-| `IMAGE_COMPACT_PLACEHOLDER` | `image_budget.rs:9` | 被驱逐图片的**文本占位符**，明确告知模型"这里曾有图，被字节预算剥离"，防幻觉 |
-| `ImageBudgetOutcome` | `image_budget.rs:92` | 一次预算的结果（`Unchanged` / `Compacted{…}` 等） |
-| `BudgetedConversation` | `image_budget.rs:107` | 预算后包装的会话视图 |
-| `apply_image_budget` | `image_budget.rs:136` | 默认入口，用上面的常量 |
-| `apply_image_budget_with_limits` | `image_budget.rs:147` | 可注入限额的入口（测试/策略用） |
+| `IMAGE_COMPACT_PLACEHOLDER` | `xai-chat-state/src/image_budget.rs` · `IMAGE_COMPACT_PLACEHOLDER(+0)` | 被驱逐**历史消息**图片的文本占位符，明确告知模型"这里曾有图，被字节预算剥离"，防幻觉（注释原文：「a silent strip otherwise induces hallucination」） |
+| `TOOL_IMAGE_COMPACT_NOTE` | `image_budget.rs` · `TOOL_IMAGE_COMPACT_NOTE(+0)` | 被驱逐**工具结果**图片的附注——tool result 的 image 数组带不了模型可见文本，所以省略说明写在 result 内容里 |
+| `MAX_REQUEST_BYTES` | `image_budget.rs` · `MAX_REQUEST_BYTES(+0)` | 上游硬上限（由 `ApiBackend::ChatCompletions.default_max_request_bytes()` 求得，≈50 MiB；超了是 HTTP 413 或连接重置） |
+| `IMAGE_COMPACT_TRIGGER_BYTES` | `image_budget.rs` · `IMAGE_COMPACT_TRIGGER_BYTES(+0)` | 触发线 = `MAX_REQUEST_BYTES - 3 MiB`（约 47 MiB）；headroom 覆盖未被计数的工具定义与请求 envelope |
+| `IMAGE_COMPACT_RECLAIM_TARGET_BYTES` | `image_budget.rs` · `IMAGE_COMPACT_RECLAIM_TARGET_BYTES(+0)` | 回收目标 = `MAX_REQUEST_BYTES / 2`（触发后驱逐到这个水位以下） |
+| `ImageBudgetOutcome` | `image_budget.rs` · `ImageBudgetOutcome(+0)` | 一次预算的结果（`Unchanged` / `Compacted{…}` 等） |
+| `BudgetedConversation` | `image_budget.rs` · `BudgetedConversation(+0)` | 预算后包装的会话视图 |
+| `image_budget_limits` | `image_budget.rs` · `image_budget_limits(+0)` | 由 `max_request_bytes` 推导 `(trigger, reclaim)`；未配置时的兜底为 `MIN_REQUEST_BYTES = 4 * TRIGGER_HEADROOM_BYTES` |
+| `apply_image_budget` | `image_budget.rs` · `apply_image_budget(+0)` | 默认入口，用上面的常量 |
+| `apply_image_budget_with_limits` | `image_budget.rs` · `apply_image_budget_with_limits(+0)` | 可注入限额的入口（测试/策略用） |
+| `evict_images_to_budget` | `image_budget.rs` · `evict_images_to_budget(+0)` | 实际驱逐循环，按 `ImageLocation` 区分历史消息 / 工具结果两类图片位置 |
 
 **关键语义**：
 
-- **精确字节计数**：`image_budget.rs:41-66` 用 `ByteCounter` 沿序列化路径累加，不做估算。
-- **hysteresis**：`image_budget.rs:32-35` 里 `assert!(reclaim < trigger)`，避免来回抖动触发 KV cache 失效。
-- **模型可读性**：图片被剥离后**不留空白**，改写为 `IMAGE_COMPACT_PLACEHOLDER` 文本，让模型显式知道"这里丢了一张图"。
+- **精确字节计数**：`image_budget.rs` · `ByteCounter(+0)`（`impl std::io::Write`，配合 `serialized_json_bytes(+0)`）沿序列化路径逐字节累加，不做估算。
+- **hysteresis**：文件顶部那条编译期断言 `const _: () = assert!(IMAGE_COMPACT_RECLAIM_TARGET_BYTES < IMAGE_COMPACT_TRIGGER_BYTES)`（快照 `:35`，紧跟 `IMAGE_COMPACT_RECLAIM_TARGET_BYTES(+0)`）保证「在高水位触发、在更低水位收干」，注释说明理由：只清到触发线会每回合重新越线、反复打爆 KV cache；落到硬上限的一半则只重写一次前缀、之后保持 cache-warm。同理触发线以下「每张图都原样保留」也是为了让 KV-cache 前缀字节稳定。
+- **模型可读性**：图片被剥离后**不留空白**，历史消息位置改写为 `IMAGE_COMPACT_PLACEHOLDER`、工具结果位置追加 `TOOL_IMAGE_COMPACT_NOTE`，让模型显式知道"这里丢了一张图"并要求它不要凭记忆描述。
 - **顺序**：字节预算在 token 压缩**之前**运行，先保证请求能发出，再谈摘要。
 
 ### 6.5 跨压缩的图片链：`xai-chat-state/src/compaction_image_context.rs`（本轮新增）
@@ -624,19 +627,22 @@ token 预算管的是"模型看得懂多少"，但它没有直接约束发给 AP
 
 | 符号 | 位置 | 作用 |
 |---|---|---|
-| `CompactionImageContext` | `compaction_image_context.rs:14` | 一次压缩的图片状态：`last_turn_image_parts` / `last_turn_image_files` / `attached_paths` |
-| `image_context_from_item` | `:42` | 从 `CompactionItem` 抽取上下文 |
-| `parse_image_files_paths` | `:84` | 解析 `<image_files>` 块里的编号行 |
-| `collect_attached_image_paths` | `:105` | 反向遍历 `CompactionMeta` 分片，去重收集 |
-| `render_image_files_block` | `:141` | 生成 `<image_files>…</image_files>` 文本块 |
-| `render_attached_image_paths_note` | `:153` | 生成一段 note，**本身也是 `<image_files>` 块**（下一轮压缩会再解析一次，链路不断） |
-| `scrub_for_envelope` | `:174` | 把 `<`/`>` 替换为 `‹`/`›`，防止路径注入 envelope 逃逸 |
+| `CompactionImageContext` | `xai-chat-state/src/compaction_image_context.rs` · `CompactionImageContext(+0)` | 一次压缩的图片状态：`last_turn_image_parts` / `last_turn_image_files` / `attached_paths`（纯数据，`Default`） |
+| `tag_block_range` | `compaction_image_context.rs` · `tag_block_range(+0)` | 首个闭合 `<tag>…</tag>` 块的字节区间（含标签）；缺失或未闭合返回 `None` |
+| `image_context_from_item` | `compaction_image_context.rs` · `image_context_from_item(+0)` | 从 `ConversationItem` 抽取上下文 |
+| `last_query_item` | `compaction_image_context.rs` · `last_query_item(+0)` | 定位「最后一个真实 user 回合」的条目 |
+| `parse_image_files_paths` | `compaction_image_context.rs` · `parse_image_files_paths(+0)` | 解析块里的编号行（`N. <path>`，`numbered_path(+0)` 只认纯数字前缀）——所以块的引导语可以改而不链断 |
+| `collect_attached_image_paths` | `compaction_image_context.rs` · `collect_attached_image_paths(+0)` | 收集所有 `User` 条目里的 `<image_files>` 路径（含 `SyntheticReason::CompactionMeta` 那条——漏了它就断链）：meta 分片先 `rev()` 再接普通条目，去重时**保留最新位置**（重新附件会刷新），最后按时间正序返回；`exclude` 内剔除；**本函数不设上限**，上限由 shell 校验真实 asset 文件后再切 |
+| `render_image_files_block` | `compaction_image_context.rs` · `render_image_files_block(+0)` | 生成回合开头的 `<image_files>…</image_files>` 文本块（空列表返回 `None`） |
+| `render_attached_image_paths_note` | `compaction_image_context.rs` · `render_attached_image_paths_note(+0)` | 生成摘要之后的 note，**本身也是 `<image_files>` 块**（同一个解析器下一轮再收一次，链路不断）；入参必须是 shell 已校验过的 asset 路径 |
+| `scrub_for_envelope` | `compaction_image_context.rs` · `scrub_for_envelope(+0)` | 把 `<`/`>` 换成 `‹`/`›` 并**丢弃 ASCII 控制字符**，防止路径伪造出 envelope 闭合标签 |
 
 **语义**：
 
 - 摘要生成后**不删除历史图片二进制**（`last_turn_image_parts` 保留最后一次 turn 的图，让模型立刻看得到）；
-- 更早的图片被驱逐为**路径引用**（`attached_paths`），以 `<image_files>` note 的形式**追加到新摘要之后**（`render_attached_image_paths_note:153-158`）；
-- 模型如需再读，用 `read_file` 走 workspace（这是 §10 的工具链）。
+- 更早的图片被驱逐为**路径引用**（`attached_paths`），以 `<image_files>` note 的形式**追加到新摘要之后**（`render_attached_image_paths_note`）；
+- **这些路径在 session 目录下，不在 workspace 里**——note 原文：「They live under the session directory, not the workspace. If one matters for the current task, open it with read_file; do not ask the user to re-send it.」。旧文档写「用 `read_file` 走 workspace」是错的：`read_file` 只是被指示去**打开这些绝对路径**，路径归属是 session 资产目录；
+- 文件顶部注释还写明分工：本 crate 只做纯文本/数据变换，**路径存在性校验属于 shell**（「the existence check on the paths belongs to the shell」），且采集到的文本按**不可信**处理。
 
 ### 6.6 与 token 压缩的编排顺序
 
@@ -692,31 +698,31 @@ token 预算管的是"模型看得懂多少"，但它没有直接约束发给 AP
 - **结果回灌父会话**：子 agent 完成时以 `PromptOrigin::SubagentCompleted { subagent_id }` 唤醒父会话（`handle_turn_input_inner` 里 `build_wake_turn_message`），且 `handle_turn_input_inner` 会 `reservations.release(completion_id)` 回收预约（§3.1.2）。
 - **Task 工具**把「派发子 agent」作为普通工具调用暴露（见 `10` 工具体系）。
 - **`SubagentCompleted` 唤醒的三种形态**（`WakeTurnMessage`）：`Digest { text, ids }`（用摘要文本跑一个真回合）、`Silent`（**不采样**，直接 `ok_end_turn(0, None)` 收尾）、`KeepBody`（沿用原 prompt body）。
-- **`TaskToolInput` 扩展**（`xai-tool-types/src/task.rs:17-127`，本轮大幅扩字段）：
+- **`TaskToolInput` 扩展**（`xai-tool-types/src/task.rs` · `TaskToolInput(+0)`，结构体到 `SubagentCompletedOutput` 之前；本轮大幅扩字段）：
 
-| 字段 | 位置 | 语义 |
+| 字段 | 位置（相对 `TaskToolInput(+0)`） | 语义 |
 |---|---|---|
-| `prompt` / `description` | `:20` / `:24` | 任务描述 |
-| `subagent_type` / `subagent_type_specified` | `:32` / `:38` | 目标 subagent 类型（`default_subagent_type:129` 兜底） |
-| `run_in_background` | `:52` | 后台派发；父会话立刻拿到 `TaskReceipt` |
-| `capability_mode` | `:60` | `SubagentCapabilityMode`（`:270`），控制子 agent 能力集 |
-| `isolation` | `:69` | `SubagentIsolationMode`（`:306`），进程/工作区隔离级别 |
-| `resume_from` | `:88` | 从既有 `task_id` 恢复（fork） |
-| `cwd` / `model` / `workspace` | `:103` / `:113` / `:120` | 显式路径/模型 slug/工作区句柄 |
-| `task_id` | `:125` | 服务端分配 ID，回填 |
+| `prompt` / `description` | `+3` / `+7` | 任务 prompt 与 3–5 词短描述（两者都进模型可见 schema） |
+| `subagent_type` / `subagent_type_specified` | `+15` / `+21` | 目标 subagent 类型；两者都是 `#[schemars(skip)]`——**不广告给模型**，省略时由 `default_subagent_type`（`task.rs` · `default_subagent_type(+0)`）兜底成 `"general-purpose"`；`*_specified` 记录 JSON 里键是否真的出现过（进程内构造为 `false`，所以默认串不算显式选择） |
+| `run_in_background` | `+35` | 后台派发，立即返回 `subagent_id`，结果由 task output 工具取。**serde 默认是 `true`**（`default_true`），且用宽松布尔反序列化 |
+| `capability_mode` | `+43` | `SubagentCapabilityMode`（`task.rs` · `SubagentCapabilityMode(+0)`）：`ReadOnly` / `ReadWrite` / `Execute` / `All`（kebab-case 线上值，带多组大小写别名）。`#[schemars(skip)]` + `skip_deserializing`——只有 harness 内部/角色定义默认值能设置，模型 JSON 里发这个键会被忽略 |
+| `isolation` | `+52` | `SubagentIsolationMode`（`task.rs` · `SubagentIsolationMode(+0)`）：**只有两档** `None`（默认，共享 workspace）与 `Worktree`（隔离 git worktree，子 agent 的改动在显式合并前不落到父工作区）。**不是「进程隔离级别」**——旧文档这句写宽了 |
+| `resume_from` | `+71` | 从**已完成**子 agent 的 `subagent_id`（不是 `task_id`）续跑：继承原始 transcript/工具状态/模型，系统提示与工具配置按当前定义重新渲染，新 prompt 作为下一条 user message 追加；源必须属于同一父会话且非活跃 |
+| `cwd` / `model` / `workspace` | `+86` / `+96` / `+103` | 显式工作目录（与 `isolation=worktree` 互斥，`resume_from` 时被忽略）/ 显式模型 slug（省略则跟随父 agent）/ 工作区 id——`workspace` 是 `#[schemars(skip)]`，「线上接受、本地忽略」，支持的 host 自己 advertise |
+| `task_id` | `+108` | 服务端在执行前注入，成为子 agent 的 session ID |
 
-配套类型：`SubagentCompletedOutput`（`task.rs:330`），子 agent 完成后的产物。Builder 侧由 `with_task_model_slugs` / `with_task_model_selection`（`xai-grok-agent/src/builder.rs:577/582`）把 `TaskModelSelection` 注入到 `TaskTool`，控制哪些模型可选。
-- **`PromptAudience::{Primary, Subagent}` 与工具收窄**（`builder.rs:349`）：Subagent 分支下强制剥离 `AskUserQuestionTool` / `SendFeedbackTool` 等交互类工具，避免子 agent 误打扰用户；见 §8 与 `10` §工具注入顺序。
-- **`CoordinatorConfig` / `SubagentProgress` / `WakeOrigin`** 等（`grok_build/task/coordinator_state.rs:27/78/93/248`）：新一轮引入子 agent 进度状态机（`SubagentLimitDecision:216`、`ChildRunRequest<C>:100`、`ChildCompletion<D>:139`），取代了旧的"完成即回灌"的单一模式。
+配套类型：`SubagentCompletedOutput`（`task.rs` · `SubagentCompletedOutput(+0)`）字段为 `output`、`subagent_id`、`subagent_type`、`tool_calls`、`turns`、`duration_ms`、`worktree_path`、`persona`、`resume_from_hint`（恒等于 `subagent_id`，给程序化消费者免解析）、`persona_hint`；方法 `resume_footer(+0)`、`to_model_text(+0)`。Builder 侧由 `with_task_model_slugs` / `with_task_model_selection`（`xai-grok-agent/src/builder.rs` · 分别 `+0`，两者相邻）把模型 slug 列表 / `TaskModelSelection` 注入 agent，控制子 agent 可选模型。
+- **`PromptAudience::{Primary, Subagent}` 与工具收窄**：枚举在 `xai-grok-agent/src/prompt/context.rs` · `PromptAudience(+0)`（`Primary` 是 `#[default]`），由 `builder.rs` · `with_prompt_audience(+0)` 写入 `AgentBuilder` 的 `prompt_audience` 字段。收窄是**按 `ToolKind` 而不是工具名**：Subagent 分支先 `retain` 掉 `ToolKind::AskUser | Feedback`（覆盖 `AskUserQuestionTool`、`SendFeedbackTool` 这类交互工具，避免子 agent 打扰用户），另一处 Subagent 分支再剥离 workflow 类工具（`is_workflow_tool`）；Primary 分支才会 push `SendFeedbackTool`。见 §8.1 与 `10` 工具注入顺序。
+- **`SubagentProgress` / `StartedChild<C>` / `WakeOrigin` / `ChildRunRequest<C>` / `ChildRunOutput<D>` / `CompletionDisposition` / `ChildCompletion<D>` / `SubagentLimitDecision` / `LimitedSpawnOrigin` / `SubagentLimitNotice` / `CoordinatorConfig` / `ChildReporter<C>`**（`xai-grok-tools/src/implementations/grok_build/task/coordinator_state.rs` · 各自 `+0`，按上表顺序依次定义）：子 agent 进度状态机与限额决策，取代旧的「完成即回灌」单一模式。
 
 **失败路径**：子 agent 回合被 abort 时，父会话侧的预约由 `task_completion_reservations` 释放；`FinalizationGate`（`turn_task.rs` · `+0`）保证「任务被 abort」与「正常 finalize」不会双写同一回合的完成记录——`claim_task_finalization`（`+0`）/ `claim_cancel_finalization`（`+0`）/ `finalization_binding_is_current`（`+0`）/ `release_finalizing_task`（`+0`）/ `finish_finalization`（`+0`）五个方法构成租约（`FinalizationLease`，`turn_task.rs` · `+0`）。
 
 ### 8.1 PromptAudience 与 prompt 模板（本轮新增）
 
-上一版把 system prompt 视为单一模板；本轮 `xai-grok-agent/src/prompt/context.rs:77` 的 `PromptContext` 拆成两阶段：
+上一版把 system prompt 视为单一模板；本轮 `xai-grok-agent/src/prompt/context.rs` · `PromptContext` 拆成两阶段：
 
-- `PromptAudience`（`context.rs:65`）= `Primary` | `Subagent`；决定用哪套模板段落（子 agent 不含交互段）。
-- `TemplateOverride`（`context.rs:16`）= `None` | `Codex` | `Custom`，取代旧 `Option<String>` 系统提示字段；`Codex` 走开源 Codex 风格模板，`Custom` 走用户自定义模板。
+- `PromptAudience`（`xai-grok-agent/src/prompt/context.rs` · `PromptAudience`）= `Primary` | `Subagent`；决定用哪套模板段落（子 agent 不含交互段）。
+- `TemplateOverride`（`xai-grok-agent/src/prompt/context.rs` · `TemplateOverride`）= `None` | `Codex` | `Custom`，取代旧 `Option<String>` 系统提示字段；`Codex` 走开源 Codex 风格模板，`Custom` 走用户自定义模板。
 - `system_prompt_label`（默认 `"Grok"`，见 `DEFAULT_SYSTEM_PROMPT_LABEL:143`）替代硬编码的 "You are Grok"，模板里 `${{ system_prompt_label }}` 直接渲染。
 - `is_non_interactive`（`PromptContext:141` 区）：非交互模式下去掉 `<user_guide>` 段，改为"你是一个自主 agent"。
 - `memory_v2_enabled` + `memory_global_path` / `memory_workspace_path`：v2 memory 系统启用时，`<memory>` 段才输出。
@@ -752,7 +758,7 @@ token 预算管的是"模型看得懂多少"，但它没有直接约束发给 AP
 
 > **不变量**：取消只停止**未来**工作，已发生的副作用（已写的文件、已发的 HTTP）不撤销——结果未知时先 reconcile。
 
-> **取消也捕获 memory**（当前 HEAD 新增）：`cancel.rs` 在 state lock 内部计算 `captures_cancelled_turn`（`cancel.rs:641`），条件是 `kind != Teardown && rewound_input.is_none() && cancelled_prompt_id.is_some_and(|pid| Self::is_capturable_front(&state, pid))`。注释：「Read before the front drains; teardown ends the session and rewind drops the turn.」。在 cancel 尾部（`cancel.rs:973`），若该标志为 true 且 `weak_self` 仍可 upgrade，则调 `enqueue_v2_turn_capture(source_prompt_index)`——注释：「The aborted task skips the completion arm; no next turn starts before this returns.」。这意味着**取消的回合与正常完成的回合走同一个 V2 capture 入口**（`memory_capture.rs:510`），部分工作留在 durable log 中。
+> **取消也捕获 memory**（当前 HEAD 新增）：`cancel.rs` 在 state lock 内部计算 `captures_cancelled_turn`（`xai-grok-shell/src/session/acp_session_impl/cancel.rs` · `cancel_running_task(+390)` 内），条件是 `kind != Teardown && rewound_input.is_none() && cancelled_prompt_id.is_some_and(|pid| Self::is_capturable_front(&state, pid))`。注释：「Read before the front drains; teardown ends the session and rewind drops the turn.」。在 cancel 尾部（`xai-grok-shell/src/session/acp_session_impl/cancel.rs` · `cancel_running_task(+715~+717)`），若该标志为 true 且 `weak_self` 仍可 upgrade，则调 `enqueue_v2_turn_capture(source_prompt_index)`——注释：「The aborted task skips the completion arm; no next turn starts before this returns.」。这意味着**取消的回合与正常完成的回合走同一个 V2 capture 入口**（`xai-grok-shell/src/session/acp_session_impl/memory_capture.rs` · `enqueue_v2_turn_capture`），部分工作留在 durable log 中。
 
 **失败路径**：
 
@@ -805,27 +811,27 @@ memory v2 的 capture 在 session 侧由三个函数控制，它们决定哪些�
 
 | 函数 | 定义位置 | 作用 |
 |---|---|---|
-| `is_capturable_turn_result` | `memory_capture.rs:261` · `pub(super) fn` | 判断 `PromptTurnResult` 是否可捕获：匹配 `Ok(PromptTurnOk{completion_kind: Completed, stop_reason: EndTurn, ..})` **或** `Ok(PromptTurnOk{completion_kind: Cancelled{..}, ..})`。注释：「Cancelled turns count too: their partial work stays in the durable log.」。前名 `is_successful_query_loop`，只认 Completed+EndTurn。 |
-| `is_capturable_front` | `memory_capture.rs:498` · `pub(super) fn` | 判断 state front 是否可捕获：`front_message_committed` + front input 的 `prompt_id` 匹配 + `queue_meta.is_some()` + `!is_synthetic()` + 非 slash（`parse_slash_prefix` 为 None）+ 非 bash 命令（`extract_bash_command` 为 None）。注释：「Only a committed human prompt records the log item tool_context.prompt_index names.」 |
-| `enqueue_v2_turn_capture` | `memory_capture.rs:510` · `pub(super) async fn` | 异步捕获入口：检查 `v2_capture_enabled()` + `memory.storage()`，读 `session_id` / `workspace_dir` / `can_expose_v2`，将 `source_prompt_index` 转 `u32` 后投递 capture job。前名 `enqueue_v2_completed_turn`。 |
+| `is_capturable_turn_result` | `xai-grok-shell/src/session/acp_session_impl/memory_capture.rs` · `is_capturable_turn_result(+0)`（`pub(super) fn`） | 判断 `PromptTurnResult` 是否可捕获：匹配 `Ok(PromptTurnOk{completion_kind: Completed, stop_reason: EndTurn, ..})` **或** `Ok(PromptTurnOk{completion_kind: Cancelled{..}, ..})`。注释：「Cancelled turns count too: their partial work stays in the durable log.」。前名 `is_successful_query_loop`，只认 Completed+EndTurn。 |
+| `is_capturable_front` | `xai-grok-shell/src/session/acp_session_impl/memory_capture.rs` · `is_capturable_front(+0)`（`pub(super) fn`） | 判断 state front 是否可捕获：`front_message_committed` + front input 的 `prompt_id` 匹配 + `queue_meta.is_some()` + `!is_synthetic()` + 非 slash（`parse_slash_prefix` 为 None）+ 非 bash 命令（`extract_bash_command` 为 None）。注释：「Only a committed human prompt records the log item tool_context.prompt_index names.」 |
+| `enqueue_v2_turn_capture` | `xai-grok-shell/src/session/acp_session_impl/memory_capture.rs` · `enqueue_v2_turn_capture(+0)`（`pub(super) async fn`） | 异步捕获入口：检查 `v2_capture_enabled()` + `memory.storage()`，读 `session_id` / `workspace_dir` / `can_expose_v2`，将 `source_prompt_index` 转 `u32` 后投递 capture job。前名 `enqueue_v2_completed_turn`。 |
 
 **两个调用方**（正常完成 + 取消）：
 
 | 调用方 | 路径 | 决策逻辑 |
 |---|---|---|
-| 正常完成 | `run_loop.rs:2342-2365` | `is_capturable_turn_result(&result) && is_capturable_front(&state, &prompt_id)` → 读 `prompt_index` → `handle_completion` 后调 `enqueue_v2_turn_capture` |
-| 取消 | `cancel.rs:641,973-975` | `captures_cancelled_turn`（`kind != Teardown && rewound_input.is_none() && is_capturable_front`）→ `enqueue_v2_turn_capture` |
+| 正常完成 | `xai-grok-shell/src/session/acp_session_impl/run_loop.rs` · `run_session(+1989~+2011)` | `is_capturable_turn_result(&result) && is_capturable_front(&state, &prompt_id)` → 读 `prompt_index` → `handle_completion` 后调 `enqueue_v2_turn_capture` |
+| 取消 | `xai-grok-shell/src/session/acp_session_impl/cancel.rs` · `cancel_running_task(+390)`（判据）与 `+715~+717`（调 `enqueue_v2_turn_capture`） | `captures_cancelled_turn`（`kind != Teardown && rewound_input.is_none() && is_capturable_front`）→ `enqueue_v2_turn_capture` |
 
-> `SessionCommand::FlushMemory`（`commands.rs:472`）的注释从「Capture every completed turn now」更新为「Capture every finished or stopped turn now」，反映取消回合也被捕获。
+> `SessionCommand::FlushMemory`（`xai-grok-shell/src/session/commands.rs` · `SessionCommand(+138)`）的注释从「Capture every completed turn now」更新为「Capture every finished or stopped turn now」，反映取消回合也被捕获。
 
 ### 10.2 UsageTurn 持久化与 ack
 
-`PersistenceMsg::UsageTurn`（`persistence.rs:316`）新增 `respond_to: oneshot::Sender<io::Result<()>>` 字段，使 turn 结束时的 usage 持久化变为**同步等待**：
+`PersistenceMsg::UsageTurn`（`xai-grok-shell/src/session/persistence.rs` · `PersistenceMsg(+76)`）新增 `respond_to: oneshot::Sender<io::Result<()>>` 字段，使 turn 结束时的 usage 持久化变为**同步等待**：
 
 | 角色 | 路径 · 符号 | 说明 |
 |---|---|---|
-| 发送方 | `turn.rs:2433` · `persist_live_usage` | 创建 oneshot channel，发 `UsageTurn { turn_number, live, respond_to }`，await ack；注释：「Callers that publish turn-end (and `x.ai/session/state`) wait so `usage.json` is visible before the turn resolves.」 |
-| 消费方 | `persistence.rs:2486-2495` · actor match arm | 写 `usage.json` 后通过 `respond_to` 回 `io::Result<()>` |
+| 发送方 | `xai-grok-shell/src/session/acp_session_impl/turn.rs` · `persist_live_usage(+18)` | 创建 oneshot channel，发 `UsageTurn { turn_number, live, respond_to }`，await ack；注释：「Callers that publish turn-end (and `x.ai/session/state`) wait so `usage.json` is visible before the turn resolves.」 |
+| 消费方 | `xai-grok-shell/src/session/persistence.rs` · `run(+404~+413)`（actor match 臂） | 写 `usage.json` 后通过 `respond_to` 回 `io::Result<()>` |
 
 > 这保证了发布 turn-end 通知（`x.ai/session/state`）之前 `usage.json` 已落盘，避免前端读到陈旧的 usage 快照。
 
@@ -888,6 +894,14 @@ if settled { SessionActor::maybe_start_running_task(session.clone(), completion_
 4. `SamplingEvent::Completed` 才是提交屏障；翻译由 `spawn_session_actor` 里的 drainer task 驱动 `handle_sampling_event`，并用 `turn_stream_drained` 的 `request_owned` 门控丢弃过期事件。`SamplingEvent` 当前有 14 个变体。
 5. 工具调用由相同 call id 闭合（`execute_tool_calls_batch` 的 `Option` 槽位 + 空 id 合成键 + 已拒绝调用仍写 tool_result）；`ToolLoop::HookDenied` 是非终止的。
 6. 压缩 `CompactionMode` 是 `Summary | Transcript | Segments(CompactionDetail)`（默认 `Segments`），引擎在 `crates/common/xai-grok-compaction`（trait 缝解耦宿主），宿主触发/持久化在 `xai-grok-shell/src/session/compaction.rs`（+ `session/helpers/`），段渲染在 `xai-compaction-transcript`；`CompactionPolicy` 五字段默认 `85/None/false/300/false`。
-7. 取消只停未来工作：靠 abort 任务实现（await 点即取消点），`settled` 决定是否立刻踢队列，类别经 `_meta.cancellationCategory`（PascalCase 第二套词表）下发；`FinalizationGate` 防「abort 与 finalize 双写」。**取消的回合也触发 V2 memory capture**：`cancel.rs` 的 `captures_cancelled_turn` 标志在非 teardown、非 rewind、`is_capturable_front` 为 true 时调 `enqueue_v2_turn_capture`，部分工作留在 durable log。`record_turn_start`（`xai-chat-state/handle.rs:250`）在 turn 入口记时间锚点；`UsageTurn` 新增 `respond_to` ack，保证 `usage.json` 在 turn-end 通知前落盘。
+7. 取消只停未来工作：靠 abort 任务实现（await 点即取消点），`settled` 决定是否立刻踢队列，类别经 `_meta.cancellationCategory`（PascalCase 第二套词表）下发；`FinalizationGate` 防「abort 与 finalize 双写」。**取消的回合也触发 V2 memory capture**：`cancel.rs` 的 `captures_cancelled_turn` 标志在非 teardown、非 rewind、`is_capturable_front` 为 true 时调 `enqueue_v2_turn_capture`，部分工作留在 durable log。`record_turn_start`（`xai-chat-state/src/handle.rs` · `record_turn_start(+0)`）在 turn 入口记时间锚点；`UsageTurn` 新增 `respond_to` ack，保证 `usage.json` 在 turn-end 通知前落盘。
+
+---
+
+## 变更记录
+
+- **基准 `42f4d7d3` / `SOURCE_REV = 559751fd`（本轮）**：①新增「图片预算」常量表（`xai-chat-state/src/image_budget.rs` 的 `MAX_REQUEST_BYTES` / `IMAGE_COMPACT_TRIGGER_BYTES`(= 上限 − 3 MiB) / `IMAGE_COMPACT_RECLAIM_TARGET_BYTES`(= 上限 / 2) 与 `apply_image_budget` / `apply_image_budget_with_limits` / `evict_images_to_budget` / `ByteCounter`），并记下文件顶部那条 hysteresis 编译期断言；②新增「压缩图片上下文」小节（`compaction_image_context.rs` 的 `tag_block_range` / `parse_image_files_paths` / `render_image_files_block` / `render_attached_image_paths_note` / `scrub_for_envelope`），含「路径在 session 目录、不在 workspace」与「存在性校验属于 shell」两条注释原话；③`TaskToolInput` 按当前源码重列字段偏移表（`run_in_background` 的 serde 默认 `true`、`isolation` 只有 `None` / `Worktree` 两档、`resume_from` 用 `subagent_id` 而非 `task_id`、`capability_mode` 四档 kebab-case），并补 `PromptAudience::{Primary, Subagent}` 与工具收窄；④`record_turn_start` 的调用点改指 `acp_session_impl/turn.rs · handle_turn_input`；⑤全篇 19 处裸行号换成符号 + 偏移，头部基准与分母（21）刷新。
+
+---
 
 [上一篇：TUI交互循环与渲染](08-TUI交互循环与渲染.md) · [总目录](README.md) · [下一篇：工具协议与扩展体系](10-工具协议与扩展体系.md)

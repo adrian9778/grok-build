@@ -1,13 +1,15 @@
-[上一篇：程序入口与运行模式](07-程序入口与运行模式.md) · [总目录](README.md) · [下一篇：Agent会话与模型循环](09-Agent会话与模型循环.md)
+[上一篇：程序入口与运行模式](07-程序入口与运行模式.md) · [总目录](README.md) · 第 8 / 22 篇 · [下一篇：Agent会话与模型循环](09-Agent会话与模型循环.md)
 
 # TUI 交互循环与渲染：Action/Effect 可单测事件循环
 
-> **第 8 / 18 篇**
+> **第 8 / 22 篇**
 > **场景**：用户在终端敲下回车，prompt 文本如何变成屏幕上的回答与工具调用卡片。本文把「同步 dispatch + 异步 effects + 节流呈现」事件循环讲清，让你能重写一个可单测的 UI 主循环，而不是「会用 Ratatui」。
-> **时间**：采样于 2026-09-23（CST），工作区 `HEAD = 2178c69c`（main）。
-> 工具版本：Rust 1.94.0（rust-toolchain.toml:11）/ `ratatui 0.29`（`Cargo.toml:234`）/ `tokio full` / `agent-client-protocol 0.10.4`（`Cargo.toml:118`）。UI crate `xai-grok-pager`，渲染 `xai-grok-pager-render`，内联终端 `xai-ratatui-inline`，输入框 `xai-ratatui-textarea`。workspace members = **102**。
+> **时间**：采样于 2026-10-27（CST）· `HEAD = 42f4d7d3`（`SOURCE_REV = 559751fd`；前次 `0e2bfffb`）。
+> 工具版本：Rust 1.94.0（rust-toolchain.toml `[toolchain].channel`）/ `ratatui 0.29`（`Cargo.toml` `[workspace.dependencies].ratatui`）/ `tokio full` / `agent-client-protocol 0.10.4`（`Cargo.toml` `[workspace.dependencies].agent-client-protocol`）。UI crate `xai-grok-pager`，渲染 `xai-grok-pager-render`，内联终端 `xai-ratatui-inline`，输入框 `xai-ratatui-textarea`。workspace members = **107**。
 
 > **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。源码索引一律用「`文件路径` · `符号(+函数内相对偏移)`」，`+0` = 函数/定义所在行。核心不变量：`dispatch` 是**纯同步**的（`xai-grok-pager/src/app/dispatch/router.rs` · `dispatch(+0)` 文档注释「Dispatch an action: mutate state, return effects to execute」），所有 IO 都被推到 `Effect` 异步任务里。
+
+> **本篇与函数级专题的分工**：本篇是交互循环的**机制层**——为什么切「同步 dispatch + 异步 effects」、`biased` 臂序的防饥饿语义、Action/Effect/TaskResult 三元组契约、写队列背压闭环，以及重实现时的取舍。逐层的**函数级走读**（每个函数的完整签名、分步正文、`AppView` 字段分组清单、`Presenter` 逐字段语义、逐臂代码摘录、输入路由的分支顺序）在专题文档 [docs/adrian/topic/tui-guide.md](../topic/tui-guide.md) 的第 1 章。两边引用同一处源码时以「文件 · 符号(+偏移)」为准；本篇不再重复抄函数体。若只想回答「一个按键怎么变成一帧」，读本篇 §4 的表即可；若要改 `drain_and_process` 或加一个 select 臂，先读专题文档对应函数的走读。
 
 ---
 
@@ -50,11 +52,11 @@ UI 逻辑要可单测，就不能在「处理一次按键」时阻塞在 IO 上�
 
 | 子树 | 规模（当前源码） | 职责 |
 |---|---|---|
-| 事件循环 | `event_loop.rs`（6149 行） | `tokio::select!` 主循环、`Presenter`、`drain_and_process`、`process_effects`、写线程事件对账 |
+| 事件循环 | `event_loop.rs`（6159 行） | `tokio::select!` 主循环、`Presenter`、`drain_and_process`、`process_effects`、写线程事件对账 |
 | 同步分发 | `dispatch/`（28 个条目，含 `session/`、`settings/`、`tests/` 子目录） | `router.rs` 总入口 + `prompt/session/permissions/turn/queue/rewind/auth/billing/dashboard/interject/voice/...` 各专题 |
-| 异步副作用 | `effects/`（`mod.rs` 5752 行 + `helpers.rs` + `session_list.rs` + 两个 tests 文件） | `execute(Effect) -> (bool, EffectMeta)`，内部 spawn 进 `JoinSet<TaskResult>` |
-| 视图模型 | `app_view.rs`（5857 行）+ `agent_view/`（**38** 个条目） | `AppView` 全局状态；`AgentView` 每 agent 的视图模型 + 输入路由 + 渲染编排 |
-| 组件渲染 | `../views/`（**74** 个条目） | 无状态的 widget/layout：`status_bar.rs`、`prompt_widget/`、`shortcuts_bar.rs`、`dashboard/`、各 modal、`agent.rs`（`AgentViewLayout` 纯布局计算） |
+| 异步副作用 | `effects/`（`mod.rs` 5735 行 + `helpers.rs` + `session_list.rs` + 两个 tests 文件） | `execute(Effect) -> (bool, EffectMeta)`，内部 spawn 进 `JoinSet<TaskResult>` |
+| 视图模型 | `app_view.rs`（5756 行）+ `agent_view/`（**39** 个条目） | `AppView` 全局状态；`AgentView` 每 agent 的视图模型 + 输入路由 + 渲染编排 |
+| 组件渲染 | `../views/`（**77** 个条目） | 无状态的 widget/layout：`status_bar.rs`、`prompt_widget/`、`shortcuts_bar.rs`、`dashboard/`、各 modal、`agent.rs`（`AgentViewLayout` 纯布局计算） |
 | ACP 适配 | `acp_handler/`（**15** 个条目） | 把 ACP 通知翻译成视图状态（permissions/session_notification/subagent_*/mcp/queue/follow_ups/...），入口 `acp_handler::handle` |
 | 渲染辅助 | `mermaid_worker.rs`、`edit_highlight_worker.rs`、`status_line/`、`leader_cluster/`、`turn_completion/`、`reader_thread.rs` | Mermaid 后台渲染、编辑高亮、状态行、leader 集群桥、回合完成对账、stdin 读线程 |
 
@@ -62,13 +64,13 @@ UI 逻辑要可单测，就不能在「处理一次按键」时阻塞在 IO 上�
 >
 > **真实漂移 2**：`PagerTerminal` 不再是 crossterm 直连的 `ratatui::Terminal`，而是 `xai-ratatui-inline` 的终端：`xai-grok-pager-render/src/render/draw.rs` · `PagerTerminal(+0)`（`= xai_ratatui_inline::Terminal<CrosstermBackend<TermWriter>>`）。多出来的 `TermWriter` 是**带序列号的写队列**，`Presenter` 的「已排空」判断就建立在它的 `queued()`/`written()` 水位上。
 >
-> **真实漂移 3**：stdin 读取被抽成独立类型 `ReaderThread`（`app/reader_thread.rs` · `ReaderThread(+0)`，`spawn(+11)` 起线程），它持唯一强 sender，`tx` 关闭即退出；teardown 时有界 join（`READER_JOIN_GRACE = 250ms`，`+16`），超时则 detach 并上报（`ReaderJoin::{Joined,TimedOut,Absent}`，`+26`）。旧文档没有这个「读线程所有权」的显式建模。
+> **真实漂移 3**：stdin 读取被抽成独立类型 `ReaderThread`（`app/reader_thread.rs` · `ReaderThread(+0)`，`spawn(+11)` 起线程），它持唯一强 sender，`tx` 关闭即退出；teardown 时有界 join（`app/reader_thread.rs` · `READER_JOIN_GRACE(+0)` = 250ms，顶层常量、定义在结构体之前），超时则 detach 并上报（`app/reader_thread.rs` · `ReaderJoin(+0)`，三变体 `Joined` / `TimedOut` / `Absent`）。旧文档没有这个「读线程所有权」的显式建模。
 
 ---
 
 ## 3. 核心三元组：Action / Effect / TaskResult
 
-三个类型都定义在 `crates/codegen/xai-grok-pager/src/app/actions.rs`（按变体首行统计，当前分别约 258 / 118 / 139 个变体）：
+三个类型都定义在 `crates/codegen/xai-grok-pager/src/app/actions.rs`（按「变体名所在首行」逐行统计顶层变体，当前分别为 307 / 134 / 138 个变体）：
 
 | 类型 | 位置 | 角色 | 关键变体（节选，均逐字核对当前源码） |
 |---|---|---|---|
@@ -91,7 +93,7 @@ flowchart LR
 >
 > 注意 `Effect::SendPrompt` 与 `Effect::SendPromptNow` 是**两个不同 effect**：前者是普通提交（`SendPrompt` 的字段是 `text: String` + `skill_token_ranges: Vec<Range<usize>>`），后者是「先取消在飞 turn，再把这段文本作为下一个 prompt turn」的 send-now 语义（`SendPromptNow` 携带 `blocks: Vec<acp::ContentBlock>`，源码注释「`session/prompt` stamped with `_meta.sendNow`」）。`TaskResult::SendPromptNowFailed` 是它专用的失败回执（见 `09` §9）。
 
-> **Dashboard 行变体移除**（当前 HEAD）：`Action::ViewCatalogEntry`、`Effect::FetchCatalogEntry`、`TaskResult::CatalogEntryReady`/`CatalogEntryFailed` 全部移除。`DashboardRowId`（`views/dashboard/state.rs:26`）从四变体缩减为三变体：`TopLevel(AgentId)`、`Roster{session_id}`、`Workspace{session_id}`——`Subagent{parent,child_session_id}` 变体已删除。`DashboardRow` 移除 `indent`/`parent_label`/`is_more_placeholder`/`more_count` 字段，`build_rows` 函数移除（替换为 `build_rows_with_roster`/`build_rows_with_workspace`），`MAX_VISIBLE_SUBAGENTS` 常量移除，`views/subagent_catalog_pane.rs`（513 行）整文件删除。`rearm_session_overlay` 不再选 Subagent 行，直接 `DashboardRowId::TopLevel(id)`。`Action::DashboardAttach` 文档从「switches to the parent agent and (for subagent rows) sets the parent's `active_subagent`」更新为「switches to that agent's view」。
+> **Dashboard 行变体移除**（当前 HEAD）：`Action::ViewCatalogEntry`、`Effect::FetchCatalogEntry`、`TaskResult::CatalogEntryReady`/`CatalogEntryFailed` 全部移除。`DashboardRowId`（`crates/codegen/xai-grok-pager/src/views/dashboard/state.rs` · 符号：`DashboardRowId`，顶层枚举定义行即 `+0`）从四变体缩减为三变体：`TopLevel(AgentId)`、`Roster{session_id}`、`Workspace{session_id}`——`Subagent{parent,child_session_id}` 变体已删除。`DashboardRow` 移除 `indent`/`parent_label`/`is_more_placeholder`/`more_count` 字段，`build_rows` 函数移除（替换为 `build_rows_with_roster`/`build_rows_with_workspace`），`MAX_VISIBLE_SUBAGENTS` 常量移除，`views/subagent_catalog_pane.rs`（513 行）整文件删除。`rearm_session_overlay` 不再选 Subagent 行，直接 `DashboardRowId::TopLevel(id)`。`Action::DashboardAttach` 文档从「switches to the parent agent and (for subagent rows) sets the parent's `active_subagent`」更新为「switches to that agent's view」。
 
 ---
 
@@ -99,32 +101,36 @@ flowchart LR
 
 `event_loop.rs` · `run(+0)`（`pub(crate) async fn run(`）是唯一的主循环入口；它的核心是**唯一一处** `tokio::select!`（`event_loop.rs` · 语句 `tokio::select!`，位于 `run` 体内，带 `biased;`）。旧文档说的「`select!` 同时消费四类源」已严重过时——当前是 **27 个臂**，且顺序（biased）本身是语义的一部分。
 
+臂序不是随手排的：`tokio::select!` 上方就写着这条优先级（源码注释，逐字）「Biased order: cancel/quit, writer acks/failures, blocked-writer report, timers, ACP, task/progress results, updates, input, slow polls, and the deliberately-last voice STT arm」。**五个自限定时器臂（scroll / deferred_draw / animation / resize_debounce / status_line）当前排在 ACP 之上**——因为流式重放下 ACP 臂几乎每轮就绪，排在下面的定时器会被饿死。而 `input_rx` 仍留在 ACP **之下**，源码注释解释这是「门控而不是重排」：`msg = async{…}, if input_rx.is_empty()`，把输入挪到 ACP 之上只会把饥饿方向翻过来（流式重绘饿死按键）。
+
 ```text
-┌──────────────── tokio::select! { biased; ... }  (event_loop.rs, run 体内) ────────────────┐
-│  1  _ = connection_cancel.cancelled()          ← leader IPC 断开 → break                  │
-│  2  _ = quit_notify.notified()                 ← 信号处理器优雅退出 → dispatch(Quit)→break │
-│  3  writer_event = writer_event_rx.recv()      ← 写线程 ack / 失败（WriterEvent）          │
-│  4  _ = writer_blocked_report                  ← 写队列零进度超时 → term.writer.blocked    │
-│  5  msg = async{acp_peek.take() 或 acp_rx.recv()}, if input_rx.is_empty()                  │
-│                                                ← ACP 通知（被输入门控）→ acp_handler::handle│
-│  6  Some(join_result) = tasks.join_next()      ← TaskResult → dispatch(TaskComplete)       │
-│  7  Some(msg) = progress_rx.recv()             ← 会话恢复进度 → SessionRestoreProgress      │
-│  8  result = async{bg_update_rx.await}         ← 后台更新检查完成                           │
-│  9  maybe_ev = input_rx.recv()                 ← crossterm 事件 → drain_and_process         │
-│ 10  _ = stall_flush                                                                        │
-│ 11  _ = resize_debounce        ← 尺寸稳定后只重排一次                                        │
-│ 12  _ = deferred_draw          ← 被节流的 draw 到点补画                                      │
-│ 13  _ = suspend_retry          ← 只开闸，真正 handoff 在循环顶                               │
-│ 14  _ = scroll_tick            ← 16ms 节奏 flush 滚轮行 / 检测 80ms 流间隔                    │
-│ 15  _ = animation_tick         ← 三个 reconcile_overdue_* 对账 + app.tick()                 │
-│ 16  _ = billing_poll / 17 gate_poll / 18 status_line_refresh / 19 subscription_watch        │
-│ 20  _ = dashboard_poll / 21 recap_poll / 22 load_barrier_tick                               │
-│ 23  Ok(()) = config_watcher.changed()          ← 配置热重载（dev）                           │
-│ 24  Ok(()) = async{appearance_watcher.changed()} ← 系统外观切换（auto-theme）                 │
-│ 25  Ok(()) = async{leader_status_rx.changed()} ← leader 连接状态（重连处理）                  │
-│ 26  result = async{reconnect_reinit.rx.await}  ← 重连 re-init 完成                          │
-│ 27  ev = async{voice_rx.recv()}                ← 语音 STT，**刻意放在最后**                   │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────── tokio::select! { biased; ... }  (event_loop.rs · run 体内，27 臂，编号即真实优先级) ────────┐
+│  1  _ = connection_cancel.cancelled()            ← leader IPC 断开 → break                          │
+│  2  _ = quit_notify.notified()                   ← 信号处理器优雅退出 → dispatch(Quit) → break        │
+│  3  writer_event = writer_event_rx.recv()        ← 写线程 ack / 失败（WriterEvent）                   │
+│  4  _ = writer_blocked_report                    ← 写队列零进度超时 → term.writer.blocked            │
+│  5  _ = scroll_tick, if input_rx.is_empty()      ← flush 残余滚轮行（app.tick_scroll）                │
+│  6  _ = deferred_draw                            ← 被节流的 draw 到点补画                             │
+│  7  _ = animation_tick                           ← 三个 reconcile_overdue_* 对账 + app.tick()          │
+│  8  _ = resize_debounce, if input_rx.is_empty()  ← 尺寸稳定后只重排一次                                │
+│  9  _ = status_line_refresh                      ← 状态行按独立节奏重新武装                            │
+│ 10  msg = async{acp_peek.take() 或 acp_rx.recv()}, if input_rx.is_empty()                             │
+│       ← ACP 通知（被输入门控，见上方注释）→ acp_handler::handle                                        │
+│ 11  Some(join_result) = tasks.join_next()        ← TaskResult → dispatch(TaskComplete)               │
+│ 12  Some(msg) = progress_rx.recv()               ← 会话恢复进度 → SessionRestoreProgress               │
+│ 13  result = async{bg_update_rx.await}           ← 后台更新检查完成                                    │
+│ 14  maybe_ev = input_rx.recv()                   ← crossterm 事件 → drain_and_process                 │
+│ 15  _ = stall_flush                              ← 空体：唤到卡顿上报时刻，真正 flush 在循环尾            │
+│ 16  _ = suspend_retry                            ← 只开闸，真正 tty handoff 在循环顶                    │
+│ 17  _ = billing_poll  ← 计费轮询        18  _ = gate_poll          ← 门禁轮询                           │
+│ 19  _ = subscription_watch           20  _ = dashboard_poll       ← 订阅档位 / dashboard 刷新             │
+│ 21  _ = recap_poll                   22  _ = load_barrier_tick    ← 离开时预生成 recap / 空体栅栏唤醒     │
+│ 23  Ok(()) = config_watcher.changed()            ← 配置热重载（dev）                                   │
+│ 24  Ok(()) = async{appearance_watcher.changed()} ← 系统外观切换（auto-theme）                           │
+│ 25  Ok(()) = async{leader_status_rx.changed()}   ← leader 连接状态（触发重连）                           │
+│ 26  result = async{reconnect_reinit.rx.await}    ← 重连 re-init 完成（逐 agent session/load）            │
+│ 27  ev = async{voice_rx.recv()}                  ← 语音 STT，**刻意放在最后**：channel 常就绪，不得饿死上面任何一臂 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
         │                              │
         ▼ (Action)                    ▼ (notification)
  dispatch::dispatch(action, &mut AppView)   ── 同步，纯内存 ──▶ Vec<Effect>
@@ -227,12 +233,14 @@ fn process_effects(
 
 #### 4.1.3 `Presenter`：节流呈现（当前 HEAD 新增层）
 
-`Presenter`（`event_loop.rs` · `Presenter(+0)`，`impl` 在 `+16`）把「请求重绘」与「真正 draw」解耦：
+`Presenter`（`event_loop.rs` · `Presenter(+0)`，`impl` 在 `+16`）把「请求重绘」与「真正 draw」解耦。
+
+> 下表是**契约**（每个方法承诺什么）；逐方法的字段读写、逐臂唤醒时点的完整清单在 [docs/adrian/topic/tui-guide.md](../topic/tui-guide.md) §1.5 的 `Presenter` 方法组。
 
 | 方法（`event_loop.rs` · `Presenter::X`） | 语义 |
 |---|---|
 | `acknowledge(sequence) -> bool` | writer ack 到达，`sequence >= in_flight_target` 才清在飞闸门 |
-| `observe_writer_progress(queued, written, now) -> WriterProgress` | 从队列水位判 `Flowing` / `Stalled` / `Recovered{blocked_for}`（`WriterProgress` 枚举在 `+0`） |
+| `observe_writer_progress(queued, written, now) -> WriterProgress` | 从队列水位判 `Flowing` / `Stalled` / `Recovered{blocked_for}`（`WriterProgress` 是独立顶层枚举，定义行在 `Presenter` 结构体**之前** 10 行，不是 `Presenter` 的嵌套项） |
 | `blocked_report_deadline() -> Option<Instant>` | 未上报的 stall episode 的上报截止时间（`writer_stalled_since + WRITER_BLOCKED_WARN_AFTER`） |
 | `mark_blocked_reported() -> Duration` | 同一 episode 只上报一次 |
 | `try_present(written, queued_before, draw, queued_after) -> bool` | **写队列没排空（`written < queued_before`）就拒绝 draw**；否则清 dirty、`draw(force)`、按 `queued_after()` 置 `in_flight_target` |
@@ -285,11 +293,15 @@ async fn drain_and_process(
 }
 ```
 
+> 逐函数的合并/过滤工具（粘贴探测与收全、同键合并、粘贴片段合并、启动 type-ahead 五件套）与逐事件分支的完整清单在 [docs/adrian/topic/tui-guide.md](../topic/tui-guide.md) §1.5；上面这段骨架只覆盖到「归一化完成」，之后是逐事件处理与 `DrainResult` 汇总。
+>
 > 三个过滤器（`csi_filter` / `x10_filter` / `xt_filter`）都是「防止半截转义序列被当成按键」的护栏：CSI 片段过滤防「一次 read 只读到一半 ESC 序列」；X10 重组防 ConPTY 把 SGR 鼠标降级成 X10 字节后混进文本；XTVERSION 过滤防终端版本应答被当成输入。**失败路径**：过滤器识别不出前缀时按普通字节透传（宁可显示乱码也不吞按键），并把 `force_repaint` 置位让下一帧整屏重绘。
 
 ---
 
 ## 5. 渲染：AppView draw 与 pager-render
+
+> 本节讲**帧怎么走到终端**（writer 序列号背压闭环）与三棵视图树的分工；`AppView` 的字段分组、逐函数签名与 `AgentView::draw` 的长参数表在 [docs/adrian/topic/tui-guide.md](../topic/tui-guide.md) §1.6 与 §5.2，渲染管线的逐文件走读在其 §3。
 
 - 视图状态集中在 `AppView`（`app/app_view.rs` · `AppView(+0)`，字段含 `escape_writer`、`pending_effects`、`dispatch_depth` 等；多个 `impl` 块分布在该文件内）。
 - 绘制入口 `pub fn draw(&mut self, terminal: &mut PagerTerminal)`（`app_view.rs` · `draw(+0)`），它只做三件事：调 `draw_inner`（`+1`）、记 `xai_grok_telemetry::startup::record_first_draw()`、`crate::memory_release::run_deferred_release()`。
@@ -320,9 +332,10 @@ AppView::draw(terminal)                                   app_view.rs  · draw(+
 
 **失败语义**：终端损坏时 `select!` 退出路径统一走 `run` 的返回（`RunResult` / `Err`），由 `07` 的 `shutdown_and_flush_telemetry` 收尾；部分重绘由 Ratatui 的 diff 能力处理，UI 逻辑里不手写。
 
-**Kitty 图像重传**（当前 HEAD 新增）：`AgentView::forget_transmitted_inline_media`（`agent_view/media.rs:372`）清空 `inline_media_ids`、`inline_media_iterm_emitted`、`last_placed_ids` 并递归 `subagent_views`。`event_loop.rs:630` 在 `force` clear（`terminal.clear()` + `overlay::reset_owner()`）后调用它——注释：「Ghostty drops image data on `ESC[2J`, and a place-only frame with `q=2` then fails silently and draws nothing.」。清空后下一帧重新 transmit（`a=t`）而非仅 place（`a=p`）。
+**Kitty 图像重传**（当前 HEAD 新增）：`AgentView::forget_transmitted_inline_media`（`crates/codegen/xai-grok-pager/src/app/agent_view/media.rs` · `impl AgentView` 函数：`forget_transmitted_inline_media`）清空 `inline_media_ids`、`inline_media_iterm_emitted`、`last_placed_ids` 并递归 `subagent_views`。
+调用点在 `crates/codegen/xai-grok-pager/src/app/event_loop.rs` · `impl Presenter` 函数：`present_if_dirty` 的 `force` 分支（函数体内 `+8 ~ +12`）——`force` clear（`terminal.clear()` + `overlay::reset_owner()`）后调用它——注释：「Ghostty drops image data on `ESC[2J`, and a place-only frame with `q=2` then fails silently and draws nothing.」。清空后下一帧重新 transmit（`a=t`）而非仅 place（`a=p`）。
 
-**终端 resize 与 reprint**（当前 HEAD 新增）：`xai-ratatui-inline/src/terminal.rs` 新增 `WidthShrink` 枚举（`:34`，`Truncates`（默认）/ `Rewraps`），决定宿主终端宽度缩小时已committed 行的处理方式。`reflowed_cursor_offset(new_width)`（`:1257`）在 Truncates 模式直接返回 `rows_above`，Rewraps 模式累加每行溢出宽度。minimal 模式新增 reprint 机制：`xai-grok-pager/src/minimal/reprint.rs`（`REPRINT_DEBOUNCE = 120ms`、`observe_minimal_layout`）+ `xai-grok-pager-minimal/src/reprint.rs`（`REPRINT_MAX_ROWS = 4000`、`maybe_reprint`）。resize 后等 debounce，minimal 清屏 + scrollback 重印最近 4000 行 committed entries——注释：「A reflowing terminal re-wraps printed rows and splits committed text mid-word.」
+**终端 resize 与 reprint**（当前 HEAD 新增）：`xai-ratatui-inline/src/terminal.rs` 新增 `WidthShrink` 枚举（顶层符号：`WidthShrink`，定义行即 `+0`；变体 `Truncates`（默认）/ `Rewraps`），决定宿主终端宽度缩小时已committed 行的处理方式。`reflowed_cursor_offset(new_width)`（同文件 `impl<B: Backend> Terminal<B>` 私有方法，方法定义行）在 Truncates 模式直接返回 `rows_above`，Rewraps 模式累加每行溢出宽度。minimal 模式新增 reprint 机制：`xai-grok-pager/src/minimal/reprint.rs`（`REPRINT_DEBOUNCE = 120ms`、`observe_minimal_layout`）+ `xai-grok-pager-minimal/src/reprint.rs`（`REPRINT_MAX_ROWS = 4000`、`maybe_reprint`）。resize 后等 debounce，minimal 清屏 + scrollback 重印最近 4000 行 committed entries——注释：「A reflowing terminal re-wraps printed rows and splits committed text mid-word.」
 
 ---
 
@@ -353,9 +366,9 @@ AppView::draw(terminal)                                   app_view.rs  · draw(+
   6. 光标样式策略（`Inherit` / `ForceBlinking` / `ForceSteady`，`+50 ~ +64`）；
   7. `MOUSE_CAPTURE_ENABLED.store(!want_minimal)`（`+67`）、`set_current_screen_mode(mode)`（`+68`）、`set_panic_hook()`（`+69`）、`signal_handler::install(mode)`（`+70`）。
 
-  `signal_handler::install`（`app/signal_handler.rs`）内 `spawn_async_signal_task` 在当前 HEAD 使用抽取的 `SignalStreams`（`crate::signal_streams::SignalStreams`，`signal_streams.rs` 新文件）。unix 版 `SignalStreams`（`signal_streams.rs:4`）持有 `interrupt`/`terminate`/`hangup` 三个 `Option<tokio::signal::unix::Signal>`，`install()`（`:12`）从 `SignalKind` claim 三个信号流（错误只 warn），`next_code()`（`:28`）`select!` 返回 130(SIGINT)/143(SIGTERM)/129(SIGHUP)。windows 版持有 `ctrl_c: Option<tokio::signal::windows::CtrlC>`。注释：「The signals the 130/143/129 exit-code map covers, claimed from construction for as long as this lives: without a live stream a signal takes its default action and kills the process.」。`spawn_async_signal_task` 的逻辑不变：首信号请求 graceful quit，第二信号 `shutdown_with_terminal_restore` 强制退出。
+  `signal_handler::install`（`app/signal_handler.rs`）内 `spawn_async_signal_task` 在当前 HEAD 使用抽取的 `SignalStreams`（定义在 `crates/codegen/xai-grok-pager/src/signal_streams.rs` 新文件；下文以 `signal_streams.rs` 简写该路径）。unix 版 `SignalStreams`（`signal_streams.rs` · `SignalStreams`，文件顶部的 cfg 分支，顶层定义行即 `+0`）持有 `interrupt`/`terminate`/`hangup` 三个 `Option<tokio::signal::unix::Signal>`，`install()`（同文件 `impl SignalStreams` 成员，紧随 impl 头行）从 `SignalKind` claim 三个信号流（错误只 warn），`next_code()`（同一 `impl SignalStreams` 成员）`select!` 返回 130(SIGINT)/143(SIGTERM)/129(SIGHUP)。windows 版 `SignalStreams` 是同文件下方的同名 cfg 分支，持有 `ctrl_c: Option<tokio::signal::windows::CtrlC>`。注释：「The signals the 130/143/129 exit-code map covers, claimed from construction for as long as this lives: without a live stream a signal takes its default action and kills the process.」。`spawn_async_signal_task` 的逻辑不变：首信号请求 graceful quit，第二信号 `shutdown_with_terminal_restore` 强制退出。
 
-  **headless 信号**（`headless/signals.rs`，新文件 157 行）：`HeadlessSignals`（`:37`）在 `run_single_turn` 入口安装（`headless.rs:806`）。`defer_exit()` 返回 `DeferredExit`，其 `signalled()` 放在 `run_single_turn` 主 loop 的 biased `select!` **第一位**（注释：「First in the biased order so an ACP firehose cannot starve the signal」），`release()` 返回终止信号码。
+  **headless 信号**（`crates/codegen/xai-grok-pager/src/headless/signals.rs`，新文件 157 行）：`HeadlessSignals`（同文件顶层定义，定义行即 `+0`）在 `run_single_turn` 入口安装（`crates/codegen/xai-grok-pager/src/headless.rs` · `run_single_turn(+5)`，即 `HeadlessSignals::install()` 调用点，函数定义行起算）。`defer_exit()` 返回 `DeferredExit`，其 `signalled()` 放在 `run_single_turn` 主 loop 的 biased `select!` **第一位**（注释：「First in the biased order so an ACP firehose cannot starve the signal」），`release()` 返回终止信号码。
   退出/切模式由 `app/mode_switch.rs` 用 `EnterAlternateScreen`/`LeaveAlternateScreen` + `Clear` 完成。
 - **Kitty keyboard**：`init_terminal` 先算跳过原因——`ctx.kitty_skip_reason()`，再叠加 `terminal::supports_keyboard_enhancement()`（`init_terminal(+79 ~ +85)`）；Alacritty 会保守地降级（`alacritty_conservative_version` 用 `ALACRITTY_BROKEN_EVENT_TYPES_MAX_PACKED`，`pager-render/src/terminal/kitty_keyboard.rs` 内常量）。`negotiated_kitty_flags(skip_reason, da2_packed)`（`kitty_keyboard.rs` · `+0`）返回最终 flag 集（`DISAMBIGUATE_ESCAPE_CODES` 必推，`REPORT_EVENT_TYPES` 仅在终端不误报 release 时推）；非空则 `PushKeyboardEnhancementFlags(flags)`（`init_terminal(+98)`），并用 `crate::terminal::set_pushed_kitty_flags(flags)`（`+109`）记下「真正推过什么」。挂起/恢复路径按记录原样重推（`app/mod.rs` 内两处 `set_pushed_kitty_flags` 调用），两者不会漂移。
 - **OSC 8 / OSC 52**：链接用 `pager-render/src/render/osc8.rs`；剪贴板经 OSC 52，`app/wrap_clipboard_image.rs` 与 `07` 的 `Wrap` 子命令共用。
@@ -448,10 +461,27 @@ pub(crate) async fn run(mut app: AppView, mut terminal: PagerTerminal) -> anyhow
 
 1. TUI 主循环 = 同步 `dispatch::dispatch(Action, &mut AppView) -> Vec<Effect>`（`dispatch/router.rs`，纯同步可单测，带 `dispatch_depth` 嵌套计数）+ 异步 `effects::execute` spawn 进 `JoinSet<TaskResult>`（`effects/mod.rs`），由 `event_loop.rs::run` 里**唯一一处**带 `biased` 的 `tokio::select!`（27 个臂）驱动。
 2. `Presenter` 层（`event_loop.rs` · `Presenter`）：`dispatch` 只打脏标记，真正 draw 由 `present_if_dirty` 在**写队列排空后**执行，并用 `WriterEvent` ack 关在飞闸门——这是背压与「屏幕冻结」诊断的落点。
-3. 视图状态归 `AppView`（`app/app_view.rs`）单写；**每 agent 的编排**归 `agent_view/`（38 条目），**共享 widget 渲染**归 `src/views/`（74 条目）——旧文档「views 被 agent_view 取代」的说法不成立，两者并存且分工不同。
-4. 终端本体是 `xai-ratatui-inline::Terminal<CrosstermBackend<TermWriter>>`（`PagerTerminal` 别名在 `pager-render/src/render/draw.rs`），不是裸 crossterm；alternate screen 只在 fullscreen 模式进（`init_terminal`），minimal 模式走 `xai-grok-pager-minimal` 的 draw hook。`WidthShrink` 枚举（`terminal.rs:34`）区分 Truncates/Rewraps 终端行为，`reflowed_cursor_offset` 据此调整光标偏移；minimal 模式 resize 后 debounce 120ms 重印最近 4000 行。
+3. 视图状态归 `AppView`（`app/app_view.rs`）单写；**每 agent 的编排**归 `agent_view/`（39 条目），**共享 widget 渲染**归 `src/views/`（77 条目）——旧文档「views 被 agent_view 取代」的说法不成立，两者并存且分工不同。
+4. 终端本体是 `xai-ratatui-inline::Terminal<CrosstermBackend<TermWriter>>`（`PagerTerminal` 别名在 `pager-render/src/render/draw.rs`），不是裸 crossterm；alternate screen 只在 fullscreen 模式进（`init_terminal`），minimal 模式走 `xai-grok-pager-minimal` 的 draw hook。`WidthShrink` 枚举（`crates/codegen/xai-ratatui-inline/src/terminal.rs` · `WidthShrink`）区分 Truncates/Rewraps 终端行为，`reflowed_cursor_offset` 据此调整光标偏移；minimal 模式 resize 后 debounce 120ms 重印最近 4000 行。
 5. 输入侧由独立读线程（`app/reader_thread.rs` 的 `ReaderThread`）经 `UnboundedSender<TimedInputEvent>` 送进主循环，`drain_and_process` 负责粘贴收全、按键合并与 CSI/X10/XTVERSION 三道过滤；输出侧由 `mermaid_worker` / `edit_highlight_worker` / `status_line` 作为 effect/定时器下游异步产出。
 6. 会话 RPC 统一走 `effects/helpers.rs::acp_send_bounded`（带 `session_rpc_timeout` 与 `SessionRpcError::TimedOut`）；`Effect::ResetMouseReporting` 是唯一不经 `execute`、由 `process_effects` 就地处理的 effect。
 7. **信号处理**（当前 HEAD 重构）：`SignalStreams`（`signal_streams.rs`）统一 unix/windows 信号流 claim，`HeadlessSignals`（`headless/signals.rs`）让 headless 模式在 biased select 第一位检查信号，不被 ACP 事件饥饿。**Dashboard** 移除 `Subagent` 行变体，`subagent_catalog_pane.rs` 整文件删除，`DashboardRowId` 缩减为三变体。**Kitty 图像**新增 `forget_transmitted_inline_media`（全屏 clear 后重传）。
+
+---
+
+## 变更记录
+
+- **基准 `42f4d7d3` / `SOURCE_REV = 559751fd`（与函数级专题的对账轮）**：本篇逐条回源码复核，改动六处，均为「文档与当前源码不符」的确认错误而非风格调整。
+  ①**select 臂序**：§4 的 ASCII 臂清单原先把 ACP 记作第 5 臂、把五个定时器臂散落在 11~15 位，与当前 `biased` 顺序不符。实测顺序为：cancel/quit/writer-ack/blocked-report（1~4）→ scroll(5) / deferred_draw(6) / animation(7) / resize(8) / status_line(9) → ACP(10) → join_next(11) / progress(12) / bg_update(13) → input(14) → 慢轮询(15~22) → config/appearance/leader/reconnect(23~26) → voice(27)。§4 补了源码原话「Biased order: …」与「五个定时器臂在 ACP 之上、`input_rx` 靠门控而非重排」两条论证。臂**总数 27** 复核为正确。
+  ②**三元组变体数**：258 / 118 / 139 是旧的欠数，按「变体名首行」逐行扫描 `Action`(55) / `Effect`(1410) / `TaskResult`(2386) 三个枚举体，当前为 **307 / 134 / 138**。
+  ③**规模数字**：`event_loop.rs` 6149→6159 行、`effects/mod.rs` 5752→5735 行、`app_view.rs` 5857→5756 行、`agent_view/` 38→39 条目、`views/` 74→77 条目（§2 表与结论同步）。
+  ④**记法错误**：§4.1.3 里 `WriterProgress` 的「枚举在 `+0`」会被读成「在 `Presenter` 内」——它实际定义在 `struct Presenter` **之前** 10 行，改述为独立顶层枚举；§2 真实漂移 3 里 `READER_JOIN_GRACE` 的 `+16`、`ReaderJoin` 的 `+26` 是残留的绝对行号，改为符号 `+0`。
+  ⑤**逐函数骨架的分工**：新增文首「本篇与函数级专题的分工」段，并在 §4.1.3 / §4.1.4 / §5 三处各加一条指向 [docs/adrian/topic/tui-guide.md](../topic/tui-guide.md) 的互链；本篇保机制与不变量、骨架与契约表照旧保留（经对账确认 tui-guide 用的是绝对行号体系，本篇的符号锚定版本更耐漂移，故两份并存、互相指路，不做删并）。
+  ⑥未改动但已复核为正确的：`dispatch`/`dispatch_inner`/`confirmed_quit` 骨架与 `dispatch_depth` 语义、`process_effects` 体内 `+9/+18/+22/+23~+42`、`drain_and_process` 体内 `+16/+18/+25/+35/+37/+38`、`Presenter::new` 八字段与 `impl` 在 `+16`、`init_terminal` 的 `+8…+109` 全部门控行、§5 的 `PagerTerminal`/`TermWriter`/`WriterSync`/`WriterEvent`/`WriterDrain`/`EscapeWriter` 落点、`REPRINT_DEBOUNCE`=120ms / `REPRINT_MAX_ROWS`=4000 / `READER_JOIN_GRACE`=250ms、§6 两个 worker 的全部符号、§8 的 `acp_send_bounded` / `take_coalesced_interjects` / `spawn_ordered_interjects` / `EffectMeta` / `parse_invocation` / `hoist_mid_text_command`、`views/subagent_catalog_pane.rs` 确已删除。
+  校验读数：`路径 ok=99 失效=0 搬家=0 符号配对=13 待判读=0 绝对行号=0 裸行号=0 折行=0`（仅 2 个说明性非仓库名）。
+
+- **基准 `42f4d7d3` / `SOURCE_REV = 559751fd`（上一轮）**：①头部时间/基准行刷新，工具版本行 `Cargo.toml:NNN` 改键路径；②Kitty 图像重传的调用点从裸行号改成 `crates/codegen/xai-grok-pager/src/app/event_loop.rs · impl Presenter` 函数 `present_if_dirty` 的 `force` 分支（函数体内偏移 `+8 ~ +12`），`forget_transmitted_inline_media` 用全路径 + 符号引用；③`WidthShrink` 改成顶层符号记法并写明变体是 `Truncates`（带 `#[default]`）/ `Rewraps`；④信号处理一段把 `SignalStreams` / `HeadlessSignals` 的路径补全为 crate 内真实文件（`src/signal_streams.rs`、`src/headless/signals.rs`），`HeadlessSignals(:37)` 之类裸行号改为「同文件顶层定义即 `+0`」；⑤首行与正文分母改 21。
+
+---
 
 [上一篇：程序入口与运行模式](07-程序入口与运行模式.md) · [总目录](README.md) · [下一篇：Agent会话与模型循环](09-Agent会话与模型循环.md)

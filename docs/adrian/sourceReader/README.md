@@ -1,9 +1,13 @@
 # Grok Build 新手重构级源码指南（4 层规范版）
 
 > **范围**：本文档库是 Grok Build（终端 AI coding agent，二进制 `xai-grok-pager-bin`，发行安装名 `grok`；TUI 主体在 `xai-grok-pager`）的**重构级完整源码指南**。它按「先简单框架、再一条全路径小例子、再逐步拆解、最后补齐全部逻辑」四层推进，目标是让读者仅凭本库就能重新实现功能等价的系统。
-> **工具版本**：Rust `1.94.0`（`rust-toolchain.toml:11`，组件 `rustfmt`/`clippy`）；`cargo` 随工具链；`ratatui = 0.29`、`tokio = full`、`agent-client-protocol = 0.10.4`（见根 `Cargo.toml` `[workspace.dependencies]`）；`Cargo.lock` 中 `rmcp = 3.4.0`（前次 `3.2.0`）。
-> **同步说明**：本库于 2026-09-28（CST）对齐至 `git HEAD = 0e2bfffb`（`SOURCE_REV = 036a5d83`，前次 `84745de9`）。相比上一轮，本库同步了 `f0e3be11` 引入的上游变更：**xai-grok-update** 新增 **WinGet 安装检测**（`winget.rs`，路径匹配 `WinGet/Packages/xAI.GrokBuild_<source>`）与 `winget upgrade` 升级提示，`auto_update.rs` 对 WinGet 安装强制 stable channel，`is_stable_channel` 移至 `version.rs`；**xai-grok-login** 新增 `GrokAuth.can_administer_team` 字段与 `AuthManager::hydrate_can_administer_team`，`manager/enrichment.rs` 新增 `hydrate_can_administer_team` + 日志卸载 `log_offloaded`；**xai-grok-pager** 新增 `Effect::HydrateTeamCapability` / `TaskResult::TeamCapabilityHydrated` / `AuthIdentity` / `app_view.is_team_principal` / `needs_team_capability_hydration`，`coding_data_sharing_lock` 替代 `is_team_non_admin`，`extensions/auth.rs` 新增 `x.ai/auth/hydrate_team_capability`；**xai-grok-shell** memory capture 从 `is_successful_query_loop` 重命名为 `is_capturable_turn_result`，现在**捕获取消回合**，`enqueue_v2_completed_turn` → `enqueue_v2_turn_capture`，新增 `is_capturable_front`，`handle_prompt` 新增 `record_turn_start`，`PersistenceMsg::UsageTurn` 新增 ack `respond_to`，cancel 路径也触发捕获；**信号处理**抽取 `signal_streams.rs::SignalStreams` 与 `headless/signals.rs::HeadlessSignals`；**Dashboard** 移除 `DashboardRowId::Subagent` 变体、`build_rows`、`MAX_VISIBLE_SUBAGENTS`、`subagent_catalog_pane.rs`（整文件删除）、`Action::ViewCatalogEntry` / `Effect::FetchCatalogEntry` / `TaskResult::CatalogEntryReady`；**终端 resize** 新增 `WidthShrink` 枚举与 `reflowed_cursor_offset`，minimal 模式新增 `reprint.rs`（`maybe_reprint` + `REPRINT_MAX_ROWS=4000`）；**工具集**新增 `resolve_session_toolset_for_host`（按 `WorkspaceHostKind` 截断 poll：sandbox=5k / 其他=40k）与 `truncation_config_for_host`，`resolve_session_toolset` 改为 `#[cfg(test)]`；`GetTerminalCommandOutputTool` 改用 `register_with_params` + `TerminalCommandOutputParams`；`x.ai/bundle/entry/get` 移除；`xai-fast-worktree` 大幅重构（`execute.rs` -428 / `mod.rs` -473）；Kitty 图像新增 `forget_transmitted_inline_media`（全屏 clear 后重传）；`plan.rs` 新增 Ctrl+C 取消空草稿。相关章节见 [08](08-TUI交互循环与渲染.md)、[09](09-Agent会话与模型循环.md)、[10](10-工具协议与扩展体系.md)、[11](11-Workspace权限沙箱与Git.md)、[12](12-认证网络遥测与更新.md)、[13](13-持久化记忆与会话恢复.md)。
-> **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。源码索引一律用 `crate/path · 符号(+函数内偏移)`（如 `xai-grok-shell/src/agent.rs 函数：SessionActor::handle_turn_input 偏移：+0`），绝对行号仅作快照、随版本变化；若你本地已有后续修改，**以当前源码为准**。
+> **工具版本**：Rust `1.94.0`（`rust-toolchain.toml` `[toolchain].channel`，组件 `rustfmt`/`clippy`）；`cargo` 随工具链；`ratatui = 0.29`、`tokio = full`、`agent-client-protocol = 0.10.4`（见根 `Cargo.toml` `[workspace.dependencies]`）；`Cargo.lock` 中 `rmcp = 3.4.0`（前次 `3.2.0`）。
+> **同步说明**：本库于 2026-10-27（CST）对齐至 `git HEAD = 42f4d7d3`（`SOURCE_REV = 559751fd`；上一轮基准 `0e2bfffb` / `SOURCE_REV = 036a5d83`）。两轮之间上游并了 **1006 个文件、+131,449/−27,964 行**，本库据此做了三类同步：
+> **① 五个新 crate（约 3.9 万行 src）**：`xai-grok-permission-rules`（23,387 行，权限规则引擎，从 `xai-grok-workspace` 拆出）、`xai-grok-cloud-config`（5,584 行，远端/托管配置，从 `xai-grok-shell` 拆出）、`xai-grok-egress-proxy`（4,593 行，受控出站代理）、`xai-grok-lifecycle`（3,844 行，VM/workspace-server 停机扇出）、`xai-grok-external-agent-migration`（1,784 行，外部 agent 配置迁移）；workspace members 由 102 增至 **107**。
+> **② 两处「拆出去」式重构改变了归属**：权限判定文件（`policy.rs`/`gate_preflight.rs`/`shell_access.rs`/`bash_command_splitting.rs`/`exec_risk.rs` 等）现居 `xai-grok-permission-rules`，`xai-grok-workspace/src/permission/` 只剩运行时装配那一半；远端配置链路同理搬到 `xai-grok-cloud-config`。全库的旧路径引用已按各篇「变更记录」逐条改写。
+> **③ 沙箱从两层变成三层**：进程级 `SandboxManager`（Landlock/seccomp/bwrap/Seatbelt）＋ **新的命令级策略层**（`xai-grok-sandbox::command`，策略→拒绝→提问→TTL 授权→重放）＋ 宿主编排 `WorkspaceSandbox`。为此新增 [17](17-命令级沙箱策略层.md)；权限规则引擎新增 [18](18-权限规则引擎.md)；外部 agent 迁移新增 [19](19-外部Agent配置迁移.md)；worktree 快速铺设与 GC 新增 [20](20-Git-Worktree快速铺设计与GC.md)；egress 代理写入 [12](12-认证网络遥测与更新.md) 第四层；lifecycle 写入[可靠性说明书](可靠性与通用技术实现说明书.md) 第四层。全库正文分母随之为 **22 篇**（`00`–`20` 共 21 篇 + 可靠性说明书）。
+> 上一轮（`f0e3be11` → `0e2bfffb`）的同步内容（WinGet 安装检测、team capability hydration、取消回合也捕获记忆、`SignalStreams`/`HeadlessSignals` 抽取、Dashboard 移除 `Subagent` 行、resize `WidthShrink` 与 minimal reprint、按 host 截断 toolset 等）仍散见各篇正文，未因本轮而失效。
+> **阅读说明**：本文讲**调用关系与数据流**，不把行号当稳定 API。源码索引一律用 `` `crate/path` · `符号(+函数内偏移)` ``（如 `crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs` · `SessionActor::handle_turn_input(+0)`），**不写 `文件:行号`**；绝对行号只允许出现在明确标了「快照」的括号里，且不构成主依据。若你本地已有后续修改，**以当前源码为准**。
 
 ---
 
@@ -27,8 +31,13 @@
 | 第四层 | `13` | [持久化记忆与会话恢复](13-持久化记忆与会话恢复.md) | JSONL 持久化、崩溃恢复、fork/rewind、Memory |
 | 第四层 | `14` | [构建测试第三方与许可证](14-构建测试第三方与许可证.md) | 构建、测试矩阵、vendored、许可证 |
 | 第四层 | `15` | [跨模块完整运行链与场景](15-跨模块完整运行链与场景.md) | 3 个深度端到端场景（完整编码任务 / 权限+沙箱 / 取消·崩溃·压缩恢复） |
+| 第四层 | `17` | [命令级沙箱策略层](17-命令级沙箱策略层.md) | 每条命令的「策略→拒绝→提问→TTL 授权→重放」闭环（与 11 的进程级沙箱是两套强制模型） |
+| 第四层 | `18` | [权限规则引擎](18-权限规则引擎.md) | `xai-grok-permission-rules`：配置求值、bash 拆解、gate 预检、受管策略、YOLO pin、shell 访问门 |
+| 第四层 | `19` | [外部 Agent 配置迁移](19-外部Agent配置迁移.md) | 把别家 agent 的配置读进来→转换→写入的跨 crate 链路与幂等/防重复打扰 |
+| 第四层 | `20` | [Git Worktree 快速铺设与 GC](20-Git-Worktree快速铺设计与GC.md) | `xai-fast-worktree`：CoW/reflink 并行克隆、Btrfs/overlay 快照、worktree 登记库与自动 GC（与 11 的宿主视角互补） |
 | 方法 | `16` | [术语表与源码查找手册](16-术语表与源码查找手册.md) | 术语消歧 + `rg`/`cargo` 查找配方 |
 | 实施 | — | [可靠性与通用技术实现说明书](可靠性与通用技术实现说明书.md) | 失败/重试/取消/背压/幂等/结果未知的统一语义 |
+| 专题 | — | [TUI 专题（函数级）](../topic/tui-guide.md) | 事件循环、输入解析、渲染管线、主题外观与 ratatui 组件的逐函数走读 |
 
 ---
 
@@ -56,8 +65,9 @@ flowchart TD
 ```
 
 - **路径 A（第一次理解工程）**：`00 → 01 → 02 → 03 → 04 → 09 → 10 → 11 → 15`。
-- **路径 B（准备维护现有代码）**：`16 → 04 → 05 → 目标专题（07–13）→ 对应测试索引`。
-- **路径 C（从零重新实现）**：`01 → 04 → 05 → 06 → 可靠性说明书 → 14 → 07/09/10/11 → 08/12/13`。
+- **路径 B（准备维护现有代码）**：`16 → 04 → 05 → 目标专题（07–13、17–20）→ 对应测试索引`。
+- **路径 C（从零重新实现）**：`01 → 04 → 05 → 06 → 可靠性说明书 → 14 → 07/09/10/11/18 → 17/08/12/13`（要做「每会话独立工作树」再加 `11 → 20`）。
+- **路径 D（只做权限/沙箱这条线）**：`11 → 18 → 17 → 15 的场景二 → ../topic/tui-guide.md 的提问界面章节`。
 
 ---
 
@@ -69,17 +79,17 @@ flowchart TD
 4. **调用关系写全**：谁调用谁、参数、返回、错误、是否跨 `await`/channel。
 5. **失败路径与成功路径同等篇幅**。
 6. **不省略核心逻辑**：不用「同上」「略」「类似」。
-7. **源码索引**：每关键结论给 `crate/path:line`；行号随版本变化，以当前源码为准。
+7. **源码索引**：每关键结论给 `` `crate/path` · `符号(+偏移)` ``；顶层符号定义行即 `+0`，impl/trait 成员相对 `impl`/`trait` 头记偏移。绝不写 `文件:行号`，行号只作已标注的快照。
 8. **与源码冲突时以源码和可复现测试为准**。
 
 ---
 
 ## 源码规模（阅读时的心理预期）
 
-- Workspace members：**102 个**（见根 `Cargo.toml` `[workspace].members`，`Cargo.toml:8-111`），分布在 `crates/codegen/`（84）、`crates/common/`（12）、`crates/build/`（1）、`third_party/`（4）、`prod/mc/`（1）。新增成员 `crates/codegen/xai-grok-file-lock`（advisory file locks for grok-home）；新增 workspace 依赖 `tree-sitter = "0.26"`。
+- Workspace members：**107 个**（见根 `Cargo.toml` `[workspace].members`），分布在 `crates/codegen/`（89）、`crates/common/`（12）、`crates/build/`（1）、`third_party/`（4）、`prod/mc/`（1）。本轮新增成员 5 个：`xai-grok-permission-rules`（权限规则引擎，从 workspace 拆出）、`xai-grok-cloud-config`（远端/托管配置，从 shell 拆出）、`xai-grok-egress-proxy`（受控出站代理）、`xai-grok-lifecycle`（VM/workspace-server 停机扇出）、`xai-grok-external-agent-migration`（外部 agent 配置迁移）。workspace 依赖含 `tree-sitter = "0.26"`。
 - 核心生产 crate 集中在 `crates/codegen/`（`xai-grok-pager`、`xai-grok-shell`、`xai-grok-sampler`、`xai-chat-state`、`xai-grok-tools`、`xai-grok-workspace`）与 `crates/common/`（`xai-tool-runtime`、`xai-tool-types`、`xai-tool-protocol`）。
 - 组合根只有一个 `main.rs`：`crates/codegen/xai-grok-pager-bin/src/main.rs`，有意不放领域逻辑。
-- 工具链：`rust-toolchain.toml:11` 钉死 `1.94.0`。
+- 工具链：`rust-toolchain.toml` `[toolchain].channel` 钉死 `1.94.0`。
 
 ---
 
@@ -110,6 +120,6 @@ flowchart LR
 1. UI 状态、会话状态、对话事实、文件事实由不同模块拥有。
 2. 模型增量 token 不是规范完成消息；`Completed` 才是提交屏障。
 3. 每个工具调用必须由相同 call id 的结果闭合。
-4. 权限决定和 OS 沙箱是两层。
+4. 权限决定、进程级 OS 沙箱、命令级沙箱策略是**三层**（分别见 11、11 §4.5.1、17）。
 5. 取消不自动撤销已经发生的副作用。
 6. 结果未知时先对账，不盲目重试。
