@@ -1,51 +1,170 @@
 [
   {
-    "file": "README.md",
-    "tier": "index",
-    "phase": "completed",
-    "status": "completed",
-    "scope": "更新 SOURCE_REV 84745de9→036a5d83、同步说明、workspace 规模数据"
-  },
-  {
     "file": "00-阅读指南与文档地图.md",
     "tier": "method",
     "phase": "completed",
     "status": "completed",
-    "scope": "同步 SOURCE_REV、覆盖矩阵、规模数据（本轮无变化，已在 README.md 更新）"
+    "scope": "文档地图收录 17/18/19；§2 成员表拆基础设施 + 本轮新增 5 成员（含行数）；路径 D 查找表加「权限结论」与「哪层拦下」两行；变更记录。【第二批】基础设施行补 `xai-fast-worktree`（32,830/30,235 行，`api.rs` 2,472 / `auto_gc.rs` 1,791 / `sync.rs` 1,786，bench 1,878 排除）并注明「worktree 本体见 20 篇、宿主视角见 11 篇」；新增成员行改指 17/18/19/20；路径 B 扩到 07–13、17–20；变更记录"
   },
   {
-    "file": "09-Agent会话与模型循环.md",
+    "file": "01-简单框架-系统骨架.md",
+    "tier": "first",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "成员 102→107；技术选型表绝对行号→Cargo.toml 键路径；file-lock 消费方收严为 shell 唯一；Computer Hub 那行由 glob 改列 3 个真 crate；变更记录"
+  },
+  {
+    "file": "02-简单例子-全路径走读.md",
+    "tier": "example",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "AcpAgentTx 误配拆行（正身 xai-acp-lib/src/common.rs）；SamplingChannel 补 Narration；AcpUpdateTracker 委托目标写全；第 9 点沙箱改「本链两层 + 全库三层」并指向 11 §4.5.1 / 17；变更记录"
+  },
+  {
+    "file": "03-详细逐步说明-主链路拆解.md",
+    "tier": "example",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "三条待判读定性（Action/ActionId 拆行、PromptTurnOk 拆行）；更正 send_action 三个产出（旧文把队列插队的 SendPromptNow 当成产出）；快照偏移回测；变更记录"
+  },
+  {
+    "file": "04-核心模块与类关系.md",
     "tier": "fourth",
     "phase": "completed",
     "status": "completed",
-    "scope": "memory capture 捕获取消回合、enqueue_v2_turn_capture、is_capturable_front、record_turn_start、UsageTurn ack、cancel 路径捕获"
+    "scope": "成员 107 与目录分布；tree-sitter 三 crate + tree-sitter-bash 搬入 permission-rules；沙箱三层；37 处裸行号→符号偏移；变更记录"
   },
   {
-    "file": "10-工具协议与扩展体系.md",
+    "file": "05-API与接口设计.md",
     "tier": "fourth",
     "phase": "completed",
     "status": "completed",
-    "scope": "GetTerminalCommandOutputTool params 重构、resolve_session_toolset_for_host+TruncationConfig、bundle entry/get 移除、hydrate_team_capability 新增"
+    "scope": "118 处裸行号清零：ASCII/Mermaid 节点标签改「符号+定义文件」，ACP 绑定表改「变体（偏移相对枚举头）」（实测 Initialize+1…SetSessionModel+10），§11 端口表只给符号→路径；基线 2178c69c→42f4d7d3、成员 102→107；变更记录。【收口轮 2026-10-28】ChatStateCommand 实测点回 66 个变体（awk 口径写在变更记录），同法复点 TaskResult 138 / Command 24 / Method 48 / SamplingEvent 14 / SessionCommand 108 / AcpAgentMessageGeneric 10 全命中；代码块注释里的绝对偏移逐条回源，唯一失效的 call_with_context +1418（把绝对行位当偏移）改为 impl 头 +342；仍未复测的四处写进 honest_debt。"
   },
   {
-    "file": "12-认证网络遥测与更新.md",
+    "file": "06-配置与数据流.md",
     "tier": "fourth",
     "phase": "completed",
     "status": "completed",
-    "scope": "WinGet 检测与升级提示、hydrate_can_administer_team、AuthIdentity/AuthMeta、enrichment 日志卸载"
+    "scope": "cloud-config/config/config-types 归属按证据卡 §9 对照表逐条改写（§5 表 4 行、§8 事实源 6 行、磁盘树 +4 文件、常量表 +4 行）；命名陷阱段（MemoryMode 两名、file-lock≠托管锁）；**新增 [compat.*] 六面与 [claude_compat].imported 归属**；RemoteSettings 按实测 179 字段；变更记录"
+  },
+  {
+    "file": "07-程序入口与运行模式.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "ensure_managed_policy_present 归属改到 cloud-config::managed_config（4 个调用点）；pre-sandbox heal 白名单回源码核对（5 true / 21 false）；变更记录"
   },
   {
     "file": "08-TUI交互循环与渲染.md",
     "tier": "fourth",
     "phase": "completed",
     "status": "completed",
-    "scope": "SignalStreams 抽取、HeadlessSignals、WidthShrink/reflow、forget_transmitted_inline_media、dashboard row 重构、subagent_catalog_pane 删除、minimal reprint"
+    "scope": "Kitty 重传调用点、WidthShrink、SignalStreams/HeadlessSignals 路径与记法全部改符号+偏移；基线行刷新；变更记录。【第二批：与 topic/tui-guide.md 对账，466→487 行，零删并（按用户决定「不删、双向互链」）】①§4 的 27 臂 select! ASCII 图按源码实测重排（cancel/quit → writer ack → blocked-writer report → 5 个自限定时器 → ACP → join/progress/bg_update → input → 慢轮询 → config/appearance/leader/reconnect → voice 刻意最后），旧图把 ACP 画在第 5 臂、定时器散在 11–15 是错的；②三变体计数更正为 307/134/138 并写明统计口径；③§2 尺寸/条目数回新（6159 / 5735 / 5756 / 39 / 77）；④`WriterProgress` 归属改「独立顶层枚举，定义行在 Presenter 结构体之前 10 行」、`READER_JOIN_GRACE`/`ReaderJoin` 残留绝对行号改 (+0)；⑤新增「本篇与函数级专题的分工」段 + §4.1.3/§4.1.4/§5 三处指向 tui-guide 的指针 blockquote。终检：路径 ok=101 失效=0 搬家=0 符号配对=13 待判读=0 绝对行号=0 裸行号=0 折行=0"
+  },
+  {
+    "file": "09-Agent会话与模型循环.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新增图片预算常量表与 compaction_image_context 小节；TaskToolInput 字段偏移表重列（run_in_background 默认 true、isolation 两档、resume_from 用 subagent_id）；PromptAudience；19 处裸行号清零；变更记录"
+  },
+  {
+    "file": "10-工具协议与扩展体系.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "分派表删掉失效的「定义行（快照）」列改「函数（顶层项即 +0）」并记录弃用原因（dispatch_pre/post_tool_use 快照漂移）；结果类型句去行号并补 RejectedReplacement/ReplacementChoice；split_identifier 确认仅 shell 侧；变更记录"
   },
   {
     "file": "11-Workspace权限沙箱与Git.md",
     "tier": "fourth",
     "phase": "completed",
     "status": "completed",
-    "scope": "resolve_session_toolset_for_host+host_kind+TruncationConfig、fast-worktree 重构"
+    "scope": "更正 1/3 重写（规则引擎拆出、沙箱三层）；§4.2 加「机制见 18 篇 + 旧路径同名搬家改写表在 18 §4.3」；§4.5.1 三层分界表 + 分界事实由 3 条扩到 5 条（SandboxPath::Gated 顶掉事前弹窗、WorkspaceHostKind 与命令级分层无关）；ASCII 框内换行路径修好；变更记录。【第二批】§4.1 要点后加「与第 [20] 篇的分工」blockquote（宿主视角 vs worktree 本体）；收口轮在同基准复测十条 `+321…+366` worktree 偏移全部命中，并如实记录「此前待办里所指的过期 worktree 表格在本篇 grep 不存在」"
+  },
+  {
+    "file": "12-认证网络遥测与更新.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新增 §4.9 受控出口（xai-grok-egress-proxy：fail-closed 合同、decider 四态、hold/settle、is_public_ip、validate_hello）；cloud-config 归属改写 3 处；12 处裸行号清零；变更记录。【第二批】§4.9 深挖：763→886 行，补齐代理生命周期与握手/帧协议的逐符号走读，全部锚点改符号+偏移后 gate 干净"
+  },
+  {
+    "file": "13-持久化记忆与会话恢复.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "会话目录树补本轮新落盘文件；锁常量；**两层互不相同的导入状态**（全局 [claude_compat].imported vs 按 cwd 的 claude_import_state.json）并指向 19 篇；memory capture 改 is_capturable_turn_result（取消回合也捕获）；变更记录"
+  },
+  {
+    "file": "14-构建测试第三方与许可证.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "rsmpeg/rusty_ffmpeg 判定改为「死配置」（消费方已不在依赖图）；8 处裸行号清零；变更记录"
+  },
+  {
+    "file": "15-跨模块完整运行链与场景.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "三个端到端场景按新子系统改写；5 处裸行号清零；变更记录"
+  },
+  {
+    "file": "16-术语表与源码查找手册.md",
+    "tier": "method",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "「执行前要过什么门」补第三层与命令级两条锚点（SandboxPolicy / sandbox_launch::prepare）；**新增「一条权限规则从字符串到决策在哪」问答**（rules/types/policy/resolution）；gate_preflight 与 policy.rs 归属改到 permission-rules；成员 101→102→107 跳变来源；变更记录。【收口轮 2026-10-28】4.3 表新增两行收掉第 18 篇交来的「`R/` 各模块符号→文件」待回写：`managed_policy/` 六个文件 + 其余 12 个根模块（此前 21 个根规则文件只登记 8 个），符号名与可见性逐条 grep 回源码；变更记录加收口轮条目。校验器：路径 ok 410→459、失效=搬家=绝对行号=裸行号=待判读=0；全库 nav 193→195 条、断链 0"
+  },
+  {
+    "file": "17-命令级沙箱策略层.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新建（690 行，四层齐备）：策略→拒绝→提问→TTL 授权→重放闭环、16 步第二层走读、11 步第三层、4.1~4.7；实测修正卡片（ProbedFile→detect.rs、default_tmp_dirs→protected.rs、build/build_at_pin/would_allow 偏移改相对 impl 头、MAX_OPEN_CALLS=512）；文件口径纠正为 37 文件 21,946 行（卡片 21,583 只数 .rs）。【收口轮 2026-10-28】新增 §4.4.1「15 个用例实际钉住了什么」逐条读断言 + include 词法与跟链逐条读源码；残余缺口在 §4.4.1 末尾诚实列出并同步进 state.json 的 honest_debt。"
+  },
+  {
+    "file": "18-权限规则引擎.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新建（318 行，四层齐备）：以 `git push && rm -rf build/` 全程走读；3.1~3.8（deny>ask>allow 与顺序无关、bash 解析链、gate_preflight 三源合并、managed_policy 层级非对称、配置合并与 YOLO pin、shell 访问门、exec/env/git 风险、folder trust）；4.3 旧路径→新路径改写表；实测推翻卡片 4 处真名（resolve_permissions_with_provenance_inner / evaluate_shell_file_access_inner / shell_path_command_operands / 39 个源文件）。【收口轮 2026-10-28】managed_policy 27 个偏移逐条实测（零错）、4 个测试名回源存在、订正 4 处（其中 3 处为内容错误）；变更记录的「待回写其它篇」三条已标注为已落地。"
+  },
+  {
+    "file": "19-外部Agent配置迁移.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新建（427 行）：跨 6 crate 分工表、ImportableItem 五变体、双层 gate 与幂等；三条易错事实（入口只有 /import-claude、skills 只登记路径不注入、引擎 crate 不认识 Claude JSON）；实测 has_claude_import 全仓从未置 true；修正卡片 8 条。【收口轮 2026-10-28】write_atomically_bound(None) 权限位分两种情形收口（含 dest 不存在分支无测试的标注）、发现 hooks JSON 走 rename 不继承权限这条初稿没有的行为、「凭据不迁移」拆成两轴；变更记录的「待收录到其它篇」四条已标注为已落地。"
+  },
+  {
+    "file": "20-Git-Worktree快速铺设计与GC.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "第二批新建（`xai-fast-worktree`）：CoW/reflink 并行克隆、Btrfs/overlay 快照、worktree 登记库与自动 GC 的四层结构；与 11 篇（宿主视角）互补分工；`xai-grok-workspace-client` 的 worktree 方法（impl@155，476–521）与 shell 终端 pty 侧接线交叉引用。修掉一处断链（`15-跨模块完整运行链路与场景.md` → `15-跨模块完整运行链与场景.md`）。缺口：本机没有 APFS reflink / Btrfs 实测环境，两条后端路径的性能叙述只到「源码合同」级别（已记入 honest_debt）。【收口轮 2026-10-28】新增 §4.7 本机 APFS 实测对照（六个 H4，全为本次实测）：原语层 24.6–37.3x / 2.06x、判据层（du -A 无效、divergence+硬链接正对照）、CLI 默认 CleanAll 归零收益（两张三样本表）、并行度 j8 封顶证实坑 #11、57 个 tracked-but-ignored 缺失证实坑 #10、§4.7.6 六条不可外推；同步回写 §4.5（第 15 条量化 + 新增 17/18）、第一层 Linked 成本特征、§4.2「CLI 不吃这套默认」、第四层标题。"
+  },
+  {
+    "file": "README.md",
+    "tier": "index",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "同步说明整段重写（①漂移量 1006 文件/+131,449/−27,964 ②5 个新成员及 src 行数 ③两处拆 crate 与沙箱两层→三层）；覆盖矩阵加 17/18/19 三行 + TUI 专题行；路径 B/C 改、新增路径 D；编写约定第 7 条与阅读说明示例改记法；不变量 4 改三层。【第二批】覆盖矩阵加第 20 篇《Git Worktree 快速铺设与 GC》行；同步说明③扩写「worktree 快速铺设与 GC 新增 [20]，全库正文分母随之为 22 篇」；路径 B 扩到 07–13、17–20；路径 C 加「要做每会话独立工作树再加 11 → 20」"
+  },
+  {
+    "file": "可靠性与通用技术实现说明书.md",
+    "tier": "fourth",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "新增第四层「pre-stop 生命周期 broker（VM 收尾）」并与 xai-agent-lifecycle 摆六维分工表（依赖集互斥）；4 处待判读定性；两处「当前源码无法确定」如实标注；变更记录。【第二批】生命周期域深挖：839→987 行，§4.9.1–§4.9.9 覆盖注册/续约/取消/超时/幂等/兜底杀的逐函数走读与 worker 装配，校验器干净（`*_tests` 文件未逐个通读，已记入 honest_debt）。【收口轮 2026-10-28】新增 §4.9.10「49 个用例各自钉住了什么」逐条读断言（补掉第二批遗留的「9 个 *_tests 未逐个通读」）；§4.9 开头行数拆分更正为 14 个生产文件 1,986 + 9 个 *_tests 1,704 + test_support.rs 154 = 3,844；pre-stop 宿主调用时机仍标「当前源码无法确定」（宿主进程不在本仓库）。"
+  },
+  {
+    "file": "docs/adrian/topic/tui-guide.md",
+    "tier": "topic",
+    "phase": "completed",
+    "status": "completed",
+    "scope": "dispatch/router.rs 与 effects/mod.rs、display_char.rs 的裸行号改符号+0；WidthShrink 内容更正为 Truncates(#[default])/Rewraps（旧文写 Reflows）。【第二批：与 08 篇对账，按用户决定不删并、双向互链】§1.5 头加「机制层见第 8 篇」指针，并如实写明本轮只在 42f4d7d3 复测了 5 处行位（WriterProgress 490 / struct Presenter 500 / impl 516 / drain_and_process 3200 / process_effects 3952 全命中），其余「约第 N 行」仍是 7d70d52c 快照；篇尾基线脚注由 9607d2c5 更正为「正文基线 HEAD=7d70d52c，§1.5 另在 42f4d7d3 复核」+ 指向 08 篇链接。【收口轮 2026-10-28】行号基线欠债用「证明无漂移」收口：git rev-parse <commit>:<crate> 树哈希比对，六个 crate 在 7d70d52c 与 42f4d7d3 之间全部 IDENTICAL，且 --is-ancestor 通过、git log 7d70d52c..HEAD -- 六路径零提交；文首快照块与刷新记录写明口径，919 个「第 N」里 345 个未逐条一手复测的残余写在 §「仍未逐条复测的部分」。"
   }
 ]

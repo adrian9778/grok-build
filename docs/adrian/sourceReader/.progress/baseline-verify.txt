@@ -1,0 +1,182 @@
+
+=== 00-阅读指南与文档地图.md｜路径 ok=66 失效=0 搬家=0 符号配对=0 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 3: _test.rs, _tests.rs, runtime.sh
+
+=== 01-简单框架-系统骨架.md｜路径 ok=89 失效=0 搬家=0 符号配对=0 待判读=0 绝对行号=0 裸行号=7 折行=1
+  # 裸行号（无『快照』标注）:255 crates/codegen/xai-grok-shell/Cargo.toml:147
+  # 裸行号（无『快照』标注）:267 Cargo.toml:235
+  # 裸行号（无『快照』标注）:268 Cargo.toml:240
+  # 裸行号（无『快照』标注）:275 Cargo.toml:179, Cargo.toml:178
+  # 裸行号（无『快照』标注）:277 Cargo.toml:278, main.rs:10
+  · 非仓库文件名 5: chat_history.json, nmain.rs, nrouter.rs, nturn.rs, updates.json
+
+=== 02-简单例子-全路径走读.md｜路径 ok=74 失效=0 搬家=0 符号配对=25 待判读=3 绝对行号=0 裸行号=1 折行=0
+  ? 符号待判读 crates/codegen/xai-grok-pager/src/app/agent.rs · AcpUpdateTracker  [在他处: crates/codegen/xai-grok-pager/src/acp/tracker.rs]
+  ? 符号待判读 crates/codegen/xai-grok-shell/src/config/mod.rs · ProfileName  [在他处: crates/codegen/xai-grok-sandbox/src/lib.rs]
+  ? 符号待判读 crates/codegen/xai-acp-lib/src/message.rs · AcpAgentTx  [在他处: crates/codegen/xai-acp-lib/src/common.rs]
+  # 裸行号（无『快照』标注）:6 Cargo.toml:8
+  · 非仓库文件名 4: chat_history.json, dispatch_lock.lock, self.pending_image_strip.lock, self.turn_stream_drained.lock
+
+=== 03-详细逐步说明-主链路拆解.md｜路径 ok=84 失效=0 搬家=0 符号配对=33 待判读=3 绝对行号=0 裸行号=1 折行=0
+  ? 符号待判读 crates/codegen/xai-grok-shell/src/session/acp_session_impl/types.rs · PromptTurnOk  [在他处: crates/codegen/xai-grok-shell/src/session/commands.rs]
+  ? 符号待判读 crates/codegen/xai-grok-pager/src/app/agent_view/mod.rs · Action  [在他处: crates/codegen/xai-grok-pager/tests/settings_e2e.rs]
+  ? 符号待判读 crates/codegen/xai-grok-pager/src/actions/defaults.rs · ActionId  [在他处: crates/codegen/xai-grok-pager/src/actions/mod.rs]
+  # 裸行号（无『快照』标注）:6 Cargo.toml:8
+  · 非仓库文件名 5: chat_history.json, events.json, l.lock, self.active_skill.lock, session.json
+
+=== 04-核心模块与类关系.md｜路径 ok=169 失效=0 搬家=0 符号配对=48 待判读=3 绝对行号=0 裸行号=40 折行=0
+  ? 符号待判读 crates/common/xai-computer-hub-sdk/src/harness.rs · ToolServerHandler  [在他处: crates/codegen/xai-grok-workspace/src/hub.rs]
+  ? 符号待判读 crates/codegen/xai-grok-workspace-types/src/rpc/mod.rs · RpcEnvelope  [在他处: crates/codegen/xai-grok-workspace-types/src/rpc/envelope.rs]
+  ? 符号待判读 xai-grok-workspace/src/handle.rs · WorkspaceOps  [在他处: crates/codegen/xai-grok-workspace/src/workspace_ops.rs]
+  # 裸行号（无『快照』标注）:6 Cargo.toml:8
+  # 裸行号（无『快照』标注）:111 crates/codegen/xai-codebase-graph/Cargo.toml:60, crates/codegen/xai-grok-workspace/Cargo.toml:70
+  # 裸行号（无『快照』标注）:241 persistence.rs:45
+  # 裸行号（无『快照』标注）:642 types.rs:37
+  # 裸行号（无『快照』标注）:780 run_loop.rs:526
+  # 裸行号（无『快照』标注）:782 run_loop.rs:557
+  # 裸行号（无『快照』标注）:784 run_loop.rs:574
+  # 裸行号（无『快照』标注）:786 run_loop.rs:581
+  # 裸行号（无『快照』标注）:796 run_loop.rs:625
+  # 裸行号（无『快照』标注）:798 run_loop.rs:653
+  # 裸行号（无『快照』标注）:800 run_loop.rs:2294
+  # 裸行号（无『快照』标注）:843 acp_session.rs:740
+  # … 另有 20 行含裸行号
+  · 非仓库文件名 3: chat_history.json, self.tasks.sh, tasks.sh
+
+=== 05-API与接口设计.md｜路径 ok=254 失效=0 搬家=0 符号配对=46 待判读=1 绝对行号=0 裸行号=119 折行=0
+  ? 符号待判读 crates/common/xai-tool-runtime/src/tool.rs · ToolDispatch  [在他处: crates/common/xai-computer-hub-core/src/inner.rs]
+  # 裸行号（无『快照』标注）:6 Cargo.toml:8
+  # 裸行号（无『快照』标注）:60 effects/helpers.rs:64
+  # 裸行号（无『快照』标注）:70 commands.rs:334
+  # 裸行号（无『快照』标注）:71 acp_agent.rs:92, acp_session.rs:740
+  # 裸行号（无『快照』标注）:72 tool.rs:37
+  # 裸行号（无『快照』标注）:73 client.rs:308
+  # 裸行号（无『快照』标注）:74 workspace_ops.rs:1507
+  # 裸行号（无『快照』标注）:79 client.rs:308
+  # 裸行号（无『快照』标注）:80 workspace_ops.rs:1507
+  # 裸行号（无『快照』标注）:91 hub_server.rs:384
+  # 裸行号（无『快照』标注）:105 app/cli.rs:416
+  # 裸行号（无『快照』标注）:106 agent_runtime.rs:5
+  # … 另有 93 行含裸行号
+  · 非仓库文件名 1: chat_history.json
+
+=== 06-配置与数据流.md｜路径 ok=103 失效=0 搬家=0 符号配对=47 待判读=3 绝对行号=0 裸行号=0 折行=0
+  ? 符号待判读 xai-grok-sampler/src/handle.rs · SamplerCommand  [在他处: crates/codegen/xai-grok-sampler/src/commands.rs]
+  ? 符号待判读 crates/codegen/xai-grok-config/src/paths.rs · paths  [在他处: crates/codegen/xai-fast-worktree/src/bin/worktree_lifecycle_bench.rs]
+  ? 符号待判读 xai-grok-memory/src/storage.rs · MemoryMode  [在他处: crates/codegen/xai-grok-telemetry/src/process/memory_telemetry.rs]
+  · 说明性引用(非错误) 1: config.toml
+  · 非仓库文件名 20: Git.md, MEMORY.md, announcement_state.json, campaigns_state.json, chat_history.json, config.toml, json.lock, managed_config.sig.json
+
+=== 07-程序入口与运行模式.md｜路径 ok=73 失效=0 搬家=0 符号配对=10 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 2: pager.toml, runtime.sh
+
+=== 08-TUI交互循环与渲染.md｜路径 ok=93 失效=0 搬家=0 符号配对=5 待判读=0 绝对行号=0 裸行号=6 折行=0
+  # 裸行号（无『快照』标注）:94 views/dashboard/state.rs:26
+  # 裸行号（无『快照』标注）:323 agent_view/media.rs:372, event_loop.rs:630
+  # 裸行号（无『快照』标注）:356 signal_streams.rs:4
+  # 裸行号（无『快照』标注）:358 headless.rs:806
+  # 裸行号（无『快照』标注）:452 terminal.rs:34
+  · 非仓库文件名 2: r.sh, subagent_catalog_pane.rs
+
+=== 09-Agent会话与模型循环.md｜路径 ok=165 失效=0 搬家=0 符号配对=3 待判读=0 绝对行号=0 裸行号=35 折行=0
+  # 裸行号（无『快照』标注）:248 xai-chat-state/src/handle.rs:250, turn.rs:529, turn.rs:2629
+  # 裸行号（无『快照』标注）:605 image_budget.rs:18
+  # 裸行号（无『快照』标注）:606 image_budget.rs:25
+  # 裸行号（无『快照』标注）:607 image_budget.rs:30
+  # 裸行号（无『快照』标注）:608 image_budget.rs:9
+  # 裸行号（无『快照』标注）:609 image_budget.rs:92
+  # 裸行号（无『快照』标注）:610 image_budget.rs:107
+  # 裸行号（无『快照』标注）:611 image_budget.rs:136
+  # 裸行号（无『快照』标注）:612 image_budget.rs:147
+  # 裸行号（无『快照』标注）:616 image_budget.rs:41
+  # 裸行号（无『快照』标注）:617 image_budget.rs:32
+  # 裸行号（无『快照』标注）:627 compaction_image_context.rs:14
+  # … 另有 18 行含裸行号
+  · 非仓库文件名 7: INDEX.md, events.json, self.pending_image_strip.lock, self.sh, self.turn_stream_drained.lock, updates.json, usage.json
+
+=== 10-工具协议与扩展体系.md｜路径 ok=127 失效=0 搬家=0 符号配对=64 待判读=1 绝对行号=5 裸行号=13 折行=0
+  ? 符号待判读 crates/codegen/xai-grok-tools/src/types/tool_index.rs · split_identifier  [在他处: crates/codegen/xai-grok-shell/src/session/tool_index.rs]
+  # 裸行号（无『快照』标注）:25 xai-grok-tools/src/bridge.rs:161, xai-grok-tools/src/types/template_renderer.rs:52
+  # 裸行号（无『快照』标注）:26 tool_call_origin.rs:7
+  # 裸行号（无『快照』标注）:27 metadata.rs:7, image.rs:52
+  # 裸行号（无『快照』标注）:29 crates/common/xai-tool-types/src/task.rs:17
+  # 裸行号（无『快照』标注）:384 terminal_command.rs:13
+  # 裸行号（无『快照』标注）:425 tool_config.rs:100, tool_config.rs:61, xai-grok-workspace/src/host_kind.rs:15
+  # 裸行号（无『快照』标注）:605 auth.rs:48, auth.rs:33, auth.rs:40
+  · 非仓库文件名 3: AGENTS.md, Git.md, self.sh
+
+=== 11-Workspace权限沙箱与Git.md｜路径 ok=64 失效=0 搬家=2 符号配对=20 待判读=2 绝对行号=5 裸行号=2 折行=1
+  ↦ 搬家 crates/codegen/xai-grok-workspace/src/permission/policy.rs  ->  多候选(3): crates/codegen/xai-grok-cloud-config/src/managed_config/policy.rs, crates/codegen/xai-grok-permission-rules/src/policy.rs, crates/codegen/xai-grok-sandbox/src/command/policy.rs
+  ↦ 搬家 crates/codegen/xai-grok-workspace/src/permission/gate_preflight.rs  ->  crates/codegen/xai-grok-permission-rules/src/gate_preflight.rs
+  ? 符号待判读 crates/codegen/xai-grok-workspace-types/src/rpc/mod.rs · WorkspaceOp  [在他处: crates/codegen/xai-grok-workspace/src/workspace_ops.rs]
+  ? 符号待判读 crates/codegen/xai-grok-sandbox/src/child_net.rs · child_net  [在他处: crates/codegen/xai-grok-sandbox/src/lib.rs]
+  # 裸行号（无『快照』标注）:14 xai-grok-sandbox/src/lib.rs:320, xai-grok-sandbox/src/child_net.rs:105
+  · 非仓库文件名 3: permission.toml, sandbox.toml, self.sh
+
+=== 12-认证网络遥测与更新.md｜路径 ok=207 失效=0 搬家=0 符号配对=25 待判读=0 绝对行号=0 裸行号=12 折行=0
+  # 裸行号（无『快照』标注）:504 lib.rs:7
+  # 裸行号（无『快照』标注）:512 version.rs:490
+  # 裸行号（无『快照』标注）:514 winget.rs:14
+  # 裸行号（无『快照』标注）:640 model.rs:84
+  # 裸行号（无『快照』标注）:641 meta.rs:36
+  # 裸行号（无『快照』标注）:642 manager.rs:858
+  # 裸行号（无『快照』标注）:643 enrichment.rs:229
+  # 裸行号（无『快照』标注）:644 enrichment.rs:53
+  # 裸行号（无『快照』标注）:650 app_view.rs:554
+  # 裸行号（无『快照』标注）:653 app_view.rs:1307
+  # 裸行号（无『快照』标注）:654 app_view.rs:1214
+  # 裸行号（无『快照』标注）:704 auto_update.rs:979
+  · 说明性引用(非错误) 1: xai-grok-shell/src/auth/
+  · 非仓库文件名 4: Git.md, auth.json, auth.json.lock, version.json
+
+=== 13-持久化记忆与会话恢复.md｜路径 ok=129 失效=0 搬家=0 符号配对=23 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 3: active_sessions.json, events.json, summary.json
+  · 非仓库文件名 19: AGENTS.md, INDEX.md, MEMORY.md, active_sessions.json, active_sessions.lock, announcement_state.json, btw_history.json, chat_history.json
+
+=== 14-构建测试第三方与许可证.md｜路径 ok=169 失效=1 搬家=0 符号配对=8 待判读=0 绝对行号=0 裸行号=8 折行=0
+  ✗ 失效路径 third_party/ffmpeg/local/lib
+  # 裸行号（无『快照』标注）:194 Cargo.toml:36, crates/codegen/xai-grok-shell/Cargo.toml:147
+  # 裸行号（无『快照』标注）:206 Cargo.toml:4, Cargo.toml:210
+  # 裸行号（无『快照』标注）:214 crates/codegen/xai-codebase-graph/Cargo.toml:60
+  # 裸行号（无『快照』标注）:215 crates/codegen/xai-grok-workspace/Cargo.toml:70
+  # 裸行号（无『快照』标注）:505 crates/codegen/xai-grok-pager-bin/Cargo.toml:2
+  # 裸行号（无『快照』标注）:508 pager-bin/Cargo.toml:3
+  · 说明性引用(非错误) 2: third_party/ffmpeg/, third_party/ffmpeg/fetch_local.py
+  · 非仓库文件名 3: THIRD_PARTY_NOTICES.md, _tests.rs, uds_proxy.rs
+
+=== 15-跨模块完整运行链与场景.md｜路径 ok=156 失效=0 搬家=1 符号配对=28 待判读=2 绝对行号=0 裸行号=5 折行=0
+  ↦ 搬家 xai-grok-workspace/src/sandbox/lib.rs  ->  crates/codegen/xai-grok-workspace/src/sandbox/mod.rs
+  ? 符号待判读 xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs · SamplingEvent  [在他处: crates/codegen/xai-grok-sampler/src/events.rs]
+  ? 符号待判读 xai-grok-shell/src/session/handle.rs · SessionCommand  [在他处: crates/codegen/xai-grok-shell/src/agent/handlers/session.rs]
+  # 裸行号（无『快照』标注）:622 spawn.rs:188
+  # 裸行号（无『快照』标注）:623 commands.rs:249
+  # 裸行号（无『快照』标注）:624 events.rs:52
+  # 裸行号（无『快照』标注）:625 tool_calls.rs:893
+  # 裸行号（无『快照』标注）:626 tool_dispatch.rs:1
+  · 非仓库文件名 2: MEMORY.md, updates.json
+
+=== 16-术语表与源码查找手册.md｜路径 ok=368 失效=0 搬家=2 符号配对=6 待判读=1 绝对行号=0 裸行号=0 折行=0
+  ↦ 搬家 crates/codegen/xai-grok-workspace/src/permission/gate_preflight.rs  ->  crates/codegen/xai-grok-permission-rules/src/gate_preflight.rs
+  ↦ 搬家 xai-grok-workspace/src/permission/gate_preflight.rs  ->  crates/codegen/xai-grok-permission-rules/src/gate_preflight.rs
+  ? 符号待判读 xai-grok-pager/src/app/event_loop.rs · JoinSet<TaskResult>  [全库无]
+  · 说明性引用(非错误) 1: xai-grok-shell/src/auth/
+  · 非仓库文件名 2: _tests.rs, default_models.json
+
+=== README.md｜路径 ok=21 失效=0 搬家=1 符号配对=1 待判读=0 绝对行号=0 裸行号=0 折行=0
+  ↦ 搬家 xai-grok-shell/src/agent.rs  ->  多候选(5): crates/codegen/xai-grok-agent/src/agent.rs, crates/codegen/xai-grok-pager/src/app/agent.rs, crates/codegen/xai-grok-pager/src/scrollback/blocks/agent.rs, crates/codegen/xai-grok-pager/src/views/agent.rs
+  · 非仓库文件名 2: Git.md, subagent_catalog_pane.rs
+
+=== 可靠性与通用技术实现说明书.md｜路径 ok=96 失效=0 搬家=0 符号配对=16 待判读=4 绝对行号=0 裸行号=0 折行=0
+  ? 符号待判读 xai-grok-pager/src/app/effects/mod.rs · Effect::CancelTurn  [在他处: crates/codegen/xai-grok-pager/src/app/actions.rs]
+  ? 符号待判读 xai-chat-state/src/handle.rs · ChatStateCommand  [在他处: crates/codegen/xai-chat-state/src/commands.rs]
+  ? 符号待判读 xai-grok-workspace/src/permission/manager/mod.rs · PermissionCommand  [在他处: crates/codegen/xai-grok-workspace/src/permission/types.rs]
+  ? 符号待判读 xai-grok-shell/src/session/handle.rs · SessionCommand  [在他处: crates/codegen/xai-grok-shell/src/agent/handlers/session.rs]
+  · 非仓库文件名 7: .meta.json, MEMORY.md, active_sessions.json, active_sessions.lock, chat_history.json, sidecar.sh, updates.json
+
+=== tui-guide.md｜路径 ok=126 失效=0 搬家=0 符号配对=0 待判读=0 绝对行号=0 裸行号=3 折行=0
+  # 裸行号（无『快照』标注）:317 dispatch/router.rs:156
+  # 裸行号（无『快照』标注）:318 effects/mod.rs:120
+  # 裸行号（无『快照』标注）:681 crates/codegen/xai-tty-utils/src/display_char.rs:6
+  · 非仓库文件名 1: pager.toml
+
+=== 汇总 提及=2857 符号配对=226 待判读=23 绝对行号残留=10 裸行号=252 失效路径=1 搬家=6 折行=2 说明性=8 裸文件名=0 非仓库名=98

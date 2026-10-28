@@ -1,0 +1,83 @@
+
+=== 00-阅读指南与文档地图.md｜路径 ok=81 失效=0 搬家=0 符号配对=2 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 5: GC.md, Git.md, _test.rs, _tests.rs, runtime.sh
+
+=== 01-简单框架-系统骨架.md｜路径 ok=94 失效=0 搬家=0 符号配对=0 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 5: chat_history.json, nmain.rs, nrouter.rs, nturn.rs, updates.json
+
+=== 02-简单例子-全路径走读.md｜路径 ok=82 失效=0 搬家=0 符号配对=26 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 5: Git.md, chat_history.json, dispatch_lock.lock, self.pending_image_strip.lock, self.turn_stream_drained.lock
+
+=== 03-详细逐步说明-主链路拆解.md｜路径 ok=89 失效=0 搬家=0 符号配对=39 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 5: chat_history.json, events.json, l.lock, self.active_skill.lock, session.json
+
+=== 04-核心模块与类关系.md｜路径 ok=185 失效=0 搬家=0 符号配对=57 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 6: Git.md, UPDATE-SPEC.md, chat_history.json, self.tasks.sh, sr_tools.py, tasks.sh
+
+=== 05-API与接口设计.md｜路径 ok=239 失效=0 搬家=0 符号配对=65 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 1: chat_history.json
+
+=== 06-配置与数据流.md｜路径 ok=157 失效=0 搬家=0 符号配对=63 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 6: .sig.json, config.toml, managed_config.lock, managed_config.toml, models_cache.json, xai-grok-shell/src/managed_config/
+  · 非仓库文件名 26: .sig.json, Git.md, MEMORY.md, announcement_state.json, campaigns_state.json, campaigns_state.json.lock, chat_history.json, claude_import_state.json
+
+=== 07-程序入口与运行模式.md｜路径 ok=78 失效=0 搬家=0 符号配对=10 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 2: pager.toml, runtime.sh
+
+=== 08-TUI交互循环与渲染.md｜路径 ok=101 失效=0 搬家=0 符号配对=13 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 2: r.sh, subagent_catalog_pane.rs
+
+=== 09-Agent会话与模型循环.md｜路径 ok=183 失效=0 搬家=0 符号配对=7 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 7: INDEX.md, events.json, self.pending_image_strip.lock, self.sh, self.turn_stream_drained.lock, updates.json, usage.json
+
+=== 10-工具协议与扩展体系.md｜路径 ok=130 失效=0 搬家=0 符号配对=103 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 3: AGENTS.md, Git.md, self.sh
+
+=== 11-Workspace权限沙箱与Git.md｜路径 ok=137 失效=0 搬家=0 符号配对=41 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 2: sandbox/src/command/, xai-grok-workspace/src/permission/policy.rs
+  · 非仓库文件名 5: GC.md, permission.toml, sandbox.toml, self.sh, sr_tools.py
+
+=== 12-认证网络遥测与更新.md｜路径 ok=279 失效=0 搬家=0 符号配对=79 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 1: xai-grok-shell/src/auth/
+  · 非仓库文件名 5: Git.md, auth.json, auth.json.lock, version.json, workspaced.toml
+
+=== 13-持久化记忆与会话恢复.md｜路径 ok=147 失效=0 搬家=0 符号配对=25 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 3: active_sessions.json, events.json, summary.json
+  · 非仓库文件名 20: AGENTS.md, INDEX.md, MEMORY.md, active_sessions.json, active_sessions.lock, announcement_state.json, btw_history.json, chat_history.json
+
+=== 14-构建测试第三方与许可证.md｜路径 ok=185 失效=0 搬家=0 符号配对=11 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 2: third_party/ffmpeg/, third_party/ffmpeg/fetch_local.py
+  · 非仓库文件名 3: THIRD_PARTY_NOTICES.md, _tests.rs, uds_proxy.rs
+
+=== 15-跨模块完整运行链与场景.md｜路径 ok=164 失效=0 搬家=0 符号配对=26 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 1: xai-grok-workspace/src/sandbox/lib.rs
+  · 非仓库文件名 2: MEMORY.md, updates.json
+
+=== 16-术语表与源码查找手册.md｜路径 ok=459 失效=0 搬家=0 符号配对=9 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 2: xai-grok-shell/src/auth/, xai-grok-workspace/src/permission/gate_preflight.rs
+  · 非仓库文件名 2: _tests.rs, default_models.json
+
+=== 17-命令级沙箱策略层.md｜路径 ok=174 失效=0 搬家=0 符号配对=88 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 1: sr_tools.py
+  · 非仓库文件名 5: _tests.rs, config.toml, sandbox.toml, sandbox_grants.toml, workspaced.toml
+
+=== 18-权限规则引擎.md｜路径 ok=76 失效=0 搬家=0 符号配对=29 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 1: sr_tools.py
+  · 非仓库文件名 12: .mcp.json, .toml.lock, config.toml, evil.sh, lsp.json, managed-settings.json, managed_config.toml, mcp.json
+
+=== 19-外部Agent配置迁移.md｜路径 ok=187 失效=0 搬家=0 符号配对=71 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 4: CLAUDE.md, _tests.rs, config.toml, imported-from-claude.json
+  · 非仓库文件名 9: .mcp.json, CLAUDE.md, GC.md, _tests.rs, claude_import_state.json, config.toml, imported-from-claude.json, settings.local.json
+
+=== 20-Git-Worktree快速铺设计与GC.md｜路径 ok=98 失效=0 搬家=0 符号配对=26 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 2: .grok-btrfs-snapshot.json, Git.md
+
+=== README.md｜路径 ok=20 失效=0 搬家=0 符号配对=0 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 非仓库文件名 2: GC.md, Git.md
+
+=== 可靠性与通用技术实现说明书.md｜路径 ok=217 失效=0 搬家=0 符号配对=88 待判读=0 绝对行号=0 裸行号=0 折行=0
+  · 说明性引用(非错误) 2: h16.json, myapp-flush.json
+  · 非仓库文件名 19: .meta.json, Bad_Name.json, GC.md, MEMORY.md, _tests.rs, active_sessions.json, active_sessions.lock, b-flush.json
+
+=== 汇总 提及=3910 符号配对=605 待判读=0 绝对行号残留=0 裸行号=0 失效路径=0 搬家=0 折行=0 说明性=25 裸文件名=0 非仓库名=153
+[adrian] 链接 201 条；断链 0；孤儿页 无
